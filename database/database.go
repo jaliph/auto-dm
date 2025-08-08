@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/jaliph/auto-dm/models"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // Database represents the database connection and operations
@@ -25,7 +25,7 @@ func NewDatabase(gormDB *GormDB) (*Database, error) {
 		return nil, fmt.Errorf("failed to create db directory: %v", err)
 	}
 
-	db, err := sql.Open("sqlite3", filepath.Join("db", "store.db"))
+	db, err := sql.Open("sqlite", filepath.Join("db", "store.db"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %v", err)
 	}

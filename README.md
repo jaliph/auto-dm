@@ -462,7 +462,7 @@ share_folder = ./files
 ## Dependencies
 
 - `go.mau.fi/whatsmeow` - WhatsApp client library
-- `github.com/mattn/go-sqlite3` - SQLite driver
+- `modernc.org/sqlite` - Pure Go SQLite driver
 - `github.com/skip2/go-qrcode` - QR code generation
 - `google.golang.org/protobuf` - Protocol buffers
 - `gorm.io/gorm` - GORM ORM
