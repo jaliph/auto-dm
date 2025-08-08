@@ -114,6 +114,16 @@ auto-dm/
 
 ## Installation
 
+### Option 1: Download Pre-built Binary (Recommended)
+
+Download the latest release from [GitHub Releases](https://github.com/jaliph/auto-dm/releases) for your platform:
+
+- **Linux**: `auto-dm_Linux_x86_64.tar.gz`
+- **macOS**: `auto-dm_Darwin_x86_64.tar.gz` or `auto-dm_Darwin_arm64.tar.gz`
+- **Windows**: `auto-dm_Windows_x86_64.zip`
+
+### Option 2: Build from Source
+
 1. Install Go 1.24.5 or later
 2. Install Microsoft SQL Server
 3. Clone the repository
@@ -136,19 +146,30 @@ auto-dm/
 
 ## Usage
 
-1. **Build the application**:
-   ```bash
-   make build
-   ```
-   This creates the binary in the `build/` directory.
+### Quick Start
 
-2. **Run the application**:
+1. **Download and run** (if using pre-built binary):
    ```bash
-   # Run directly with go
-   go run main.go
+   # Extract the binary
+   tar -xzf auto-dm_Linux_x86_64.tar.gz
    
-   # Or run the built binary
+   # Run the application
+   ./auto-dm
+   ```
+
+2. **Build and run** (if building from source):
+   ```bash
+   # Build the application
+   make build
+   
+   # Run the application
    ./build/auto-dm
+   ```
+
+3. **Docker** (if using Docker):
+   ```bash
+   # Run with Docker
+   docker run -p 8080:8080 -v $(pwd)/config:/app/config -v $(pwd)/files:/app/files ghcr.io/jaliph/auto-dm:latest
    ```
 
 2. **Register a Sender**:

@@ -13,6 +13,13 @@ import (
 	"github.com/jaliph/auto-dm/whatsapp"
 )
 
+// Version information (set by GoReleaser)
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
 func main() {
 	// Load configuration
 	cfg := config.LoadConfig()
@@ -77,6 +84,7 @@ func main() {
 	}()
 
 	log.Printf("Auto-DM server started successfully!")
+	log.Printf("Version: %s (commit: %s, built: %s)", version, commit, date)
 	log.Printf("API server running on port %s", cfg.APIPort)
 	log.Printf("Register endpoint: POST %s/register", baseURL)
 	log.Printf("QR code endpoint: GET %s/qr/{token}", baseURL)

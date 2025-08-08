@@ -125,6 +125,28 @@ vet:
 .PHONY: check
 check: fmt vet lint
 
+# Release targets
+.PHONY: release
+release:
+	@echo "Creating release with GoReleaser..."
+	@goreleaser release --rm-dist
+
+.PHONY: release-snapshot
+release-snapshot:
+	@echo "Creating snapshot release with GoReleaser..."
+	@goreleaser release --snapshot --rm-dist --skip-publish
+
+.PHONY: release-dry-run
+release-dry-run:
+	@echo "Running GoReleaser dry run..."
+	@goreleaser release --snapshot --rm-dist --skip-publish --skip-validate
+
+# Install GoReleaser
+.PHONY: install-goreleaser
+install-goreleaser:
+	@echo "Installing GoReleaser..."
+	@go install github.com/goreleaser/goreleaser@latest
+
 # Show help
 .PHONY: help
 help:
@@ -145,4 +167,8 @@ help:
 	@echo "  lint         - Lint code (requires golangci-lint)"
 	@echo "  vet          - Vet code"
 	@echo "  check        - Format, vet, and lint code"
+	@echo "  release      - Create a release with GoReleaser"
+	@echo "  release-snapshot - Create a snapshot release"
+	@echo "  release-dry-run - Run GoReleaser dry run"
+	@echo "  install-goreleaser - Install GoReleaser"
 	@echo "  help         - Show this help message"
