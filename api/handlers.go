@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jaliph/auto-dm/database"
 	"github.com/jaliph/auto-dm/models"
@@ -409,7 +412,32 @@ func (h *Handler) sendMessageWithContext(ctx context.Context, senderPhone, recip
 	default:
 	}
 
-	return h.clientManager.SendMessage(senderPhone, recipient, message)
+	// Send the message
+	err := h.clientManager.SendMessage(senderPhone, recipient, message)
+	if err != nil {
+		return err
+	}
+
+	// Record sent message to MSSQL
+	sentMessage := models.Message{
+		SenderPhone:    senderPhone,
+		RecipientPhone: recipient,
+		MessageType:    "text",
+		Content:        message,
+		Timestamp:      time.Now(),
+		IsFromMe:       true,
+		ChatID:         recipient + "@s.whatsapp.net",
+		MessageID:      generateMessageID(),
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+
+	if err := h.gormDB.StoreMessage(&sentMessage); err != nil {
+		log.Printf("Warning: Failed to record sent message to MSSQL: %v", err)
+		// Don't return error as the message was sent successfully
+	}
+
+	return nil
 }
 
 // sendFileWithContext sends a WhatsApp file with context support
@@ -430,7 +458,32 @@ func (h *Handler) sendFileWithContext(ctx context.Context, senderPhone, recipien
 	}
 
 	// Send file using client manager
-	return h.clientManager.SendFile(senderPhone, recipient, filePath)
+	err := h.clientManager.SendFile(senderPhone, recipient, filePath)
+	if err != nil {
+		return err
+	}
+
+	// Record sent file message to MSSQL
+	sentMessage := models.Message{
+		SenderPhone:    senderPhone,
+		RecipientPhone: recipient,
+		MessageType:    "file",
+		Content:        fileName, // Store filename as content
+		MediaURL:       filePath, // Store file path as media URL
+		Timestamp:      time.Now(),
+		IsFromMe:       true,
+		ChatID:         recipient + "@s.whatsapp.net",
+		MessageID:      generateMessageID(),
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+
+	if err := h.gormDB.StoreMessage(&sentMessage); err != nil {
+		log.Printf("Warning: Failed to record sent file message to MSSQL: %v", err)
+		// Don't return error as the file was sent successfully
+	}
+
+	return nil
 }
 
 // sendMessage sends a WhatsApp message using a registered user client (legacy method)
@@ -621,4 +674,14 @@ func (h *Handler) sendHTMLResponse(w http.ResponseWriter, title, message, qrCode
 </html>`
 
 	w.Write([]byte(html))
+}
+
+// generateMessageID generates a unique message ID
+func generateMessageID() string {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based ID if crypto/rand fails
+		return fmt.Sprintf("msg_%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(bytes)
 }

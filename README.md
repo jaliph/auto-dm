@@ -85,6 +85,8 @@ auto-dm/
     "message": "Hello World"
   }
   ```
+  *Note: Sent messages are automatically recorded to MSSQL database*
+
 - **Send File**: `POST /send` with JSON body:
   ```json
   {
@@ -94,6 +96,7 @@ auto-dm/
     "file_name": "document.pdf"
   }
   ```
+  *Note: Sent file messages are automatically recorded to MSSQL database with filename and file path*
 - **Get Messages**: `GET /messages?phone=<phone>&limit=<limit>` - Retrieve messages for a specific phone
 - **Get Recent Messages**: `GET /messages?limit=<limit>` - Get recent messages
 - **Get Statistics**: `GET /stats` - Get message statistics
