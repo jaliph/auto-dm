@@ -62,7 +62,6 @@ brews:
     commit_author:
       name: "Auto-DM Bot"
       email: "bot@jaliph.com"
-    folder: Formula
     goarm: "6"
     install: |
       bin.install "auto-dm"
