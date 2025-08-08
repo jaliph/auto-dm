@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -420,8 +421,8 @@ func (h *Handler) sendFileWithContext(ctx context.Context, senderPhone, recipien
 	default:
 	}
 
-	// Construct full file path
-	filePath := fmt.Sprintf("%s/%s", h.fileShareFolder, fileName)
+	// Construct full file path (cross-platform)
+	filePath := filepath.Join(h.fileShareFolder, fileName)
 
 	// Check if file exists
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jaliph/auto-dm/models"
@@ -24,7 +25,7 @@ func NewDatabase(gormDB *GormDB) (*Database, error) {
 		return nil, fmt.Errorf("failed to create db directory: %v", err)
 	}
 
-	db, err := sql.Open("sqlite3", "db/store.db")
+	db, err := sql.Open("sqlite3", filepath.Join("db", "store.db"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %v", err)
 	}

@@ -107,6 +107,7 @@ auto-dm/
 - **File Storage**: Files to be shared are stored in the configured `share_folder` (default: `./files`)
 - **Supported Types**: Any document type supported by WhatsApp (PDF, DOC, XLS, etc.)
 - **Usage**: Place files in the folder and reference them by filename in the API
+- **Cross-Platform**: Paths work correctly on Windows, macOS, and Linux
 
 ## Installation
 

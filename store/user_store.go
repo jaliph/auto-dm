@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -31,8 +32,8 @@ func (usm *UserStoreManager) CreateUserStore(phone string) (*whatsmeow.Client, e
 		return nil, fmt.Errorf("failed to create db directory: %v", err)
 	}
 
-	// Create user-specific database file
-	dbPath := fmt.Sprintf("db/user_%s.db", phone)
+	// Create user-specific database file (cross-platform)
+	dbPath := filepath.Join("db", fmt.Sprintf("user_%s.db", phone))
 
 	// Create the store container for this user
 	container, err := sqlstore.New(context.Background(), "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", dbPath), nil)
@@ -72,8 +73,8 @@ func (usm *UserStoreManager) LoadUserStore(phone, deviceID string) (*whatsmeow.C
 		return nil, fmt.Errorf("failed to create db directory: %v", err)
 	}
 
-	// Create user-specific database file
-	dbPath := fmt.Sprintf("db/user_%s.db", phone)
+	// Create user-specific database file (cross-platform)
+	dbPath := filepath.Join("db", fmt.Sprintf("user_%s.db", phone))
 
 	// Create the store container for this user
 	container, err := sqlstore.New(context.Background(), "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", dbPath), nil)
