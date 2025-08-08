@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -172,6 +173,65 @@ func (cm *ClientManager) SendMessage(senderPhone, recipient, message string) err
 	}
 
 	log.Printf("Message sent from %s to %s: %s", senderPhone, recipient, message)
+	return nil
+}
+
+// SendFile sends a WhatsApp file using a registered user client
+func (cm *ClientManager) SendFile(senderPhone, recipient, filePath string) error {
+	cm.mu.RLock()
+	client, exists := cm.userStoreManager.GetUserClient(senderPhone)
+	cm.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("sender %s is not registered", senderPhone)
+	}
+
+	if !client.IsConnected() {
+		return fmt.Errorf("sender %s is not connected", senderPhone)
+	}
+
+	// Read file
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %v", err)
+	}
+
+	// Get file info
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to get file info: %v", err)
+	}
+
+	// Upload file to WhatsApp
+	uploaded, err := client.Upload(context.Background(), fileData, whatsmeow.MediaDocument)
+	if err != nil {
+		return fmt.Errorf("failed to upload file: %v", err)
+	}
+
+	// Create document message
+	msg := &waProto.Message{
+		DocumentMessage: &waProto.DocumentMessage{
+			URL:           &uploaded.URL,
+			Mimetype:      proto.String("application/octet-stream"),
+			FileName:      proto.String(fileInfo.Name()),
+			DirectPath:    &uploaded.DirectPath,
+			MediaKey:      uploaded.MediaKey,
+			FileEncSHA256: uploaded.FileEncSHA256,
+			FileSHA256:    uploaded.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(fileData))),
+		},
+	}
+
+	// Send file
+	_, err = client.SendMessage(context.Background(), types.JID{
+		User:   recipient,
+		Server: types.DefaultUserServer,
+	}, msg)
+	if err != nil {
+		return fmt.Errorf("failed to send file: %v", err)
+	}
+
+	log.Printf("File sent from %s to %s: %s", senderPhone, recipient, fileInfo.Name())
 	return nil
 }
 

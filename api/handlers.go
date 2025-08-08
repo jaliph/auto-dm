@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -24,10 +25,11 @@ type Handler struct {
 	qrManager        *whatsapp.QRManager
 	baseURL          string
 	qrExpiryMinutes  int
+	fileShareFolder  string
 }
 
 // NewHandler creates a new API handler
-func NewHandler(userStoreManager *store.UserStoreManager, gormDB *database.GormDB, db *database.Database, clientManager *whatsapp.ClientManager, qrManager *whatsapp.QRManager, baseURL string, qrExpiryMinutes int) *Handler {
+func NewHandler(userStoreManager *store.UserStoreManager, gormDB *database.GormDB, db *database.Database, clientManager *whatsapp.ClientManager, qrManager *whatsapp.QRManager, baseURL string, qrExpiryMinutes int, fileShareFolder string) *Handler {
 	return &Handler{
 		userStoreManager: userStoreManager,
 		gormDB:           gormDB,
@@ -36,6 +38,7 @@ func NewHandler(userStoreManager *store.UserStoreManager, gormDB *database.GormD
 		qrManager:        qrManager,
 		baseURL:          baseURL,
 		qrExpiryMinutes:  qrExpiryMinutes,
+		fileShareFolder:  fileShareFolder,
 	}
 }
 
@@ -293,6 +296,8 @@ func (h *Handler) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 		Sender    string `json:"sender"`
 		Recipient string `json:"recipient"`
 		Message   string `json:"message"`
+		Type      string `json:"type"`      // "text" or "file"
+		FileName  string `json:"file_name"` // filename when type is "file"
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -306,10 +311,35 @@ func (h *Handler) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate required fields
-	if request.Sender == "" || request.Recipient == "" || request.Message == "" {
+	if request.Sender == "" || request.Recipient == "" {
 		response := models.APIResponse{
 			Status: "error",
-			Error:  "Missing required fields: sender, recipient, message",
+			Error:  "Missing required fields: sender, recipient",
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Validate message type
+	if request.Type == "" {
+		request.Type = "text" // default to text
+	}
+
+	if request.Type == "text" && request.Message == "" {
+		response := models.APIResponse{
+			Status: "error",
+			Error:  "Message is required for text type",
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	if request.Type == "file" && request.FileName == "" {
+		response := models.APIResponse{
+			Status: "error",
+			Error:  "File name is required for file type",
 		}
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(response)
@@ -338,8 +368,14 @@ func (h *Handler) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send the message with context
-	err := h.sendMessageWithContext(r.Context(), request.Sender, request.Recipient, request.Message)
+	// Send the message or file with context
+	var err error
+	if request.Type == "file" {
+		err = h.sendFileWithContext(r.Context(), request.Sender, request.Recipient, request.FileName)
+	} else {
+		err = h.sendMessageWithContext(r.Context(), request.Sender, request.Recipient, request.Message)
+	}
+
 	if err != nil {
 		// Check if context was cancelled
 		if r.Context().Err() != nil {
@@ -349,7 +385,7 @@ func (h *Handler) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 
 		response := models.APIResponse{
 			Status: "error",
-			Error:  fmt.Sprintf("Failed to send message: %v", err),
+			Error:  fmt.Sprintf("Failed to send %s: %v", request.Type, err),
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(response)
@@ -373,6 +409,27 @@ func (h *Handler) sendMessageWithContext(ctx context.Context, senderPhone, recip
 	}
 
 	return h.clientManager.SendMessage(senderPhone, recipient, message)
+}
+
+// sendFileWithContext sends a WhatsApp file with context support
+func (h *Handler) sendFileWithContext(ctx context.Context, senderPhone, recipient, fileName string) error {
+	// Check if context is cancelled
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	// Construct full file path
+	filePath := fmt.Sprintf("%s/%s", h.fileShareFolder, fileName)
+
+	// Check if file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return fmt.Errorf("file not found: %s", fileName)
+	}
+
+	// Send file using client manager
+	return h.clientManager.SendFile(senderPhone, recipient, filePath)
 }
 
 // sendMessage sends a WhatsApp message using a registered user client (legacy method)

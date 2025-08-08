@@ -69,7 +69,7 @@ func main() {
 	// Start REST API server
 	baseURL := "http://localhost:" + cfg.APIPort
 	qrExpiryMinutes := 10 // QR codes expire after 10 minutes
-	apiServer := server.NewServer(userStoreManager, gormDB, db, clientManager, qrManager, baseURL, qrExpiryMinutes)
+	apiServer := server.NewServer(userStoreManager, gormDB, db, clientManager, qrManager, baseURL, qrExpiryMinutes, cfg.FileShareFolder)
 	go func() {
 		if err := apiServer.Start(cfg.APIPort); err != nil {
 			log.Printf("Failed to start API server: %v", err)

@@ -81,7 +81,17 @@ auto-dm/
   {
     "sender": "911234567890",
     "recipient": "919876543210", 
+    "type": "text",
     "message": "Hello World"
+  }
+  ```
+- **Send File**: `POST /send` with JSON body:
+  ```json
+  {
+    "sender": "911234567890",
+    "recipient": "919876543210", 
+    "type": "file",
+    "file_name": "document.pdf"
   }
   ```
 - **Get Messages**: `GET /messages?phone=<phone>&limit=<limit>` - Retrieve messages for a specific phone
@@ -92,6 +102,11 @@ auto-dm/
 - **Sender Stores**: `db/user_<phone>.db` - Individual sender WhatsApp sessions
 - **Sender Tracking**: `db/store.db` - Maps phone numbers to device IDs and tracks authentication status
 - **Message Storage**: MSSQL database with `whatsapp_messages` table
+
+### File Sharing
+- **File Storage**: Files to be shared are stored in the configured `share_folder` (default: `./files`)
+- **Supported Types**: Any document type supported by WhatsApp (PDF, DOC, XLS, etc.)
+- **Usage**: Place files in the folder and reference them by filename in the API
 
 ## Installation
 

@@ -22,11 +22,12 @@ type Server struct {
 	handler          *api.Handler
 	baseURL          string
 	qrExpiryMinutes  int
+	fileShareFolder  string
 }
 
 // NewServer creates a new HTTP server
-func NewServer(userStoreManager *store.UserStoreManager, gormDB *database.GormDB, db *database.Database, clientManager *whatsapp.ClientManager, qrManager *whatsapp.QRManager, baseURL string, qrExpiryMinutes int) *Server {
-	handler := api.NewHandler(userStoreManager, gormDB, db, clientManager, qrManager, baseURL, qrExpiryMinutes)
+func NewServer(userStoreManager *store.UserStoreManager, gormDB *database.GormDB, db *database.Database, clientManager *whatsapp.ClientManager, qrManager *whatsapp.QRManager, baseURL string, qrExpiryMinutes int, fileShareFolder string) *Server {
+	handler := api.NewHandler(userStoreManager, gormDB, db, clientManager, qrManager, baseURL, qrExpiryMinutes, fileShareFolder)
 	return &Server{
 		userStoreManager: userStoreManager,
 		gormDB:           gormDB,
@@ -36,6 +37,7 @@ func NewServer(userStoreManager *store.UserStoreManager, gormDB *database.GormDB
 		handler:          handler,
 		baseURL:          baseURL,
 		qrExpiryMinutes:  qrExpiryMinutes,
+		fileShareFolder:  fileShareFolder,
 	}
 }
 

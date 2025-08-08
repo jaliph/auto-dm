@@ -21,6 +21,9 @@ type Config struct {
 
 	// WhatsApp settings
 	ConnectionCheckInterval int // in minutes
+
+	// File sharing settings
+	FileShareFolder string // folder path for file sharing
 }
 
 // LoadConfig loads configuration from config.ini file or environment variables
@@ -37,6 +40,9 @@ func LoadConfig() *Config {
 
 		// WhatsApp settings
 		ConnectionCheckInterval: 1, // 1 minute
+
+		// File sharing settings
+		FileShareFolder: getEnv("FILE_SHARE_FOLDER", "./files"),
 	}
 
 	// Try to load from config.ini file
@@ -84,6 +90,13 @@ func loadFromINI(config *Config) error {
 			if val, err := strconv.Atoi(interval); err == nil {
 				config.ConnectionCheckInterval = val
 			}
+		}
+	}
+
+	// File sharing section
+	if fileSection := cfg.Section("files"); fileSection != nil {
+		if folder := fileSection.Key("share_folder").String(); folder != "" {
+			config.FileShareFolder = folder
 		}
 	}
 
