@@ -62,7 +62,7 @@ auto-dm/
    ```json
    {
      "status": "error",
-     "error": "Sender 1234567890 is already authenticated"
+     "error": "Sender 911234567890 is already authenticated"
    }
    ```
    
@@ -79,8 +79,8 @@ auto-dm/
 - **Send Message**: `POST /send` with JSON body:
   ```json
   {
-    "sender": "1234567890",
-    "recipient": "9876543210", 
+    "sender": "911234567890",
+    "recipient": "919876543210", 
     "message": "Hello World"
   }
   ```
@@ -136,7 +136,7 @@ auto-dm/
    ```bash
    curl -X POST http://localhost:8080/register \
      -H "Content-Type: application/json" \
-     -d '{"phone": "1234567890"}'
+     -d '{"phone": "911234567890"}'
    ```
    
    **Re-registration**: If a sender's previous registration failed (expired or invalidated), they can register again with the same phone number. The system will automatically handle re-registration for failed senders.
@@ -204,8 +204,8 @@ auto-dm/
    curl -X POST http://localhost:8080/send \
      -H "Content-Type: application/json" \
      -d '{
-       "sender": "1234567890",
-       "recipient": "9876543210",
+       "sender": "911234567890",
+       "recipient": "919876543210",
        "message": "Hello World"
      }'
    ```

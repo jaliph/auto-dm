@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -47,6 +48,14 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	// Check if request is cancelled
+	select {
+	case <-r.Context().Done():
+		http.Error(w, "Request cancelled", http.StatusRequestTimeout)
+		return
+	default:
+	}
+
 	// Parse JSON request body
 	var request models.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -70,9 +79,15 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create QR code session
-	session, err := h.qrManager.CreateQRCodeSession(request.Phone, h.baseURL, h.qrExpiryMinutes)
+	// Create QR code session with context
+	session, err := h.qrManager.CreateQRCodeSessionWithContext(r.Context(), request.Phone, h.baseURL, h.qrExpiryMinutes)
 	if err != nil {
+		// Check if context was cancelled
+		if r.Context().Err() != nil {
+			http.Error(w, "Request cancelled", http.StatusRequestTimeout)
+			return
+		}
+
 		// Check for specific error types
 		if strings.Contains(err.Error(), "already authenticated") {
 			response := models.APIResponse{
@@ -133,12 +148,18 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 	format := r.URL.Query().Get("format")
 	log.Printf("DEBUG: Format parameter: %s", format)
 
-	// Get QR code session
-	log.Printf("DEBUG: Calling qrManager.GetQRCode with token: %s", token)
-	session, err := h.qrManager.GetQRCode(token)
-	log.Printf("DEBUG: GetQRCode returned err: %v", err)
+	// Get QR code session with context
+	log.Printf("DEBUG: Calling qrManager.GetQRCodeWithContext with token: %s", token)
+	session, err := h.qrManager.GetQRCodeWithContext(r.Context(), token)
+	log.Printf("DEBUG: GetQRCodeWithContext returned err: %v", err)
 	if err != nil {
 		log.Printf("DEBUG: Error type: %T, Error message: %s", err, err.Error())
+
+		// Check if context was cancelled
+		if r.Context().Err() != nil {
+			http.Error(w, "Request cancelled", http.StatusRequestTimeout)
+			return
+		}
 
 		// Check if the error is due to expired session
 		if strings.Contains(err.Error(), "QR code session expired") {
@@ -256,6 +277,14 @@ func (h *Handler) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if request is cancelled
+	select {
+	case <-r.Context().Done():
+		http.Error(w, "Request cancelled", http.StatusRequestTimeout)
+		return
+	default:
+	}
+
 	// Set content type
 	w.Header().Set("Content-Type", "application/json")
 
@@ -309,9 +338,15 @@ func (h *Handler) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send the message
-	err := h.sendMessage(request.Sender, request.Recipient, request.Message)
+	// Send the message with context
+	err := h.sendMessageWithContext(r.Context(), request.Sender, request.Recipient, request.Message)
 	if err != nil {
+		// Check if context was cancelled
+		if r.Context().Err() != nil {
+			http.Error(w, "Request cancelled", http.StatusRequestTimeout)
+			return
+		}
+
 		response := models.APIResponse{
 			Status: "error",
 			Error:  fmt.Sprintf("Failed to send message: %v", err),
@@ -328,9 +363,21 @@ func (h *Handler) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// sendMessage sends a WhatsApp message using a registered user client
-func (h *Handler) sendMessage(senderPhone, recipient, message string) error {
+// sendMessageWithContext sends a WhatsApp message with context support
+func (h *Handler) sendMessageWithContext(ctx context.Context, senderPhone, recipient, message string) error {
+	// Check if context is cancelled
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	return h.clientManager.SendMessage(senderPhone, recipient, message)
+}
+
+// sendMessage sends a WhatsApp message using a registered user client (legacy method)
+func (h *Handler) sendMessage(senderPhone, recipient, message string) error {
+	return h.sendMessageWithContext(context.Background(), senderPhone, recipient, message)
 }
 
 // HandleGetMessages handles the /messages API endpoint

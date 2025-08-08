@@ -1,0 +1,17 @@
+[database]
+# MSSQL Database Configuration
+# Update these values with your actual MSSQL server details
+mssql_server = localhost
+mssql_database = whatsapp_automation
+mssql_username = sa
+mssql_password = YourStrong@Passw0rd
+
+[api]
+# API Server Configuration
+# Port for the REST API server
+port = :8080
+
+[whatsapp]
+# WhatsApp Connection Settings
+# Interval in minutes to check WhatsApp client connections
+connection_check_interval = 1

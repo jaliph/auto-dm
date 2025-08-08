@@ -40,5 +40,8 @@ build/
 coverage.out
 coverage.html
 
+# Configuration files (may contain sensitive data)
+config.ini
+
 # Examples (keep in repo)
 # examples/

@@ -71,13 +71,27 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-// CreateQRCodeSession creates a new QR code session for a phone number
-func (qm *QRManager) CreateQRCodeSession(phone string, baseURL string, expiryMinutes int) (*QRCodeSession, error) {
+// CreateQRCodeSessionWithContext creates a new QR code session with context support
+func (qm *QRManager) CreateQRCodeSessionWithContext(ctx context.Context, phone string, baseURL string, expiryMinutes int) (*QRCodeSession, error) {
+	// Check if context is cancelled
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Check if sender already exists and get their status
 	if qm.db.SenderExists(phone) {
 		sender, err := qm.db.GetSender(phone)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get sender status: %v", err)
+		}
+
+		// Check context again
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
 		}
 
 		// Allow re-registration for failed senders (expired or invalidated)
@@ -98,6 +112,13 @@ func (qm *QRManager) CreateQRCodeSession(phone string, baseURL string, expiryMin
 		if err := qm.db.CreateSender(phone); err != nil {
 			return nil, fmt.Errorf("failed to create sender: %v", err)
 		}
+	}
+
+	// Check context again
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
 	}
 
 	// Generate token
@@ -126,18 +147,23 @@ func (qm *QRManager) CreateQRCodeSession(phone string, baseURL string, expiryMin
 	qm.sessions[token] = session
 	qm.mu.Unlock()
 
-	// Start QR code generation in background
-	go qm.generateQRCode(session)
+	// Start QR code generation in background with context
+	go qm.generateQRCodeWithContext(ctx, session)
 
 	return session, nil
 }
 
-// generateQRCode generates QR code for a session
-func (qm *QRManager) generateQRCode(session *QRCodeSession) {
+// CreateQRCodeSession creates a new QR code session for a phone number (legacy method)
+func (qm *QRManager) CreateQRCodeSession(phone string, baseURL string, expiryMinutes int) (*QRCodeSession, error) {
+	return qm.CreateQRCodeSessionWithContext(context.Background(), phone, baseURL, expiryMinutes)
+}
+
+// generateQRCodeWithContext generates QR code for a session with context support
+func (qm *QRManager) generateQRCodeWithContext(ctx context.Context, session *QRCodeSession) {
 	log.Printf("Starting QR code generation for %s", session.Phone)
 
-	// Get QR channel
-	qrChan, _ := session.Client.GetQRChannel(context.Background())
+	// Get QR channel with context
+	qrChan, _ := session.Client.GetQRChannel(ctx)
 
 	// Connect client
 	if err := session.Client.Connect(); err != nil {
@@ -146,38 +172,57 @@ func (qm *QRManager) generateQRCode(session *QRCodeSession) {
 		return
 	}
 
-	// Wait for QR code
-	for evt := range qrChan {
-		session.mu.Lock()
-
-		switch evt.Event {
-		case "code":
-			session.QRCode = evt.Code
-			session.Status = "pending"
-			log.Printf("QR code generated for %s", session.Phone)
-
-		case "timeout":
-			session.Status = "expired"
-			log.Printf("QR code timed out for %s", session.Phone)
-			qm.updateSessionStatus(session, "expired")
-			session.mu.Unlock()
-			return
-
-		case "success":
-			session.Status = "authenticated"
-			log.Printf("Authentication successful for %s", session.Phone)
-
-			// Update database
-			if session.Client.Store.ID != nil {
-				qm.db.UpdateSenderDeviceID(session.Phone, session.Client.Store.ID.String())
+	// Wait for QR code with context cancellation
+	for {
+		select {
+		case evt, ok := <-qrChan:
+			if !ok {
+				// Channel closed
+				return
 			}
-			qm.updateSessionStatus(session, "authenticated")
+
+			session.mu.Lock()
+			switch evt.Event {
+			case "code":
+				session.QRCode = evt.Code
+				session.Status = "pending"
+				log.Printf("QR code generated for %s", session.Phone)
+
+			case "timeout":
+				session.Status = "expired"
+				log.Printf("QR code timed out for %s", session.Phone)
+				qm.updateSessionStatus(session, "expired")
+				session.mu.Unlock()
+				return
+
+			case "success":
+				session.Status = "authenticated"
+				log.Printf("Authentication successful for %s", session.Phone)
+
+				// Update database
+				if session.Client.Store.ID != nil {
+					qm.db.UpdateSenderDeviceID(session.Phone, session.Client.Store.ID.String())
+				}
+				qm.updateSessionStatus(session, "authenticated")
+				session.mu.Unlock()
+				return
+			}
 			session.mu.Unlock()
+
+		case <-ctx.Done():
+			log.Printf("QR code generation cancelled for %s: %v", session.Phone, ctx.Err())
+			session.mu.Lock()
+			session.Status = "expired"
+			session.mu.Unlock()
+			qm.updateSessionStatus(session, "expired")
 			return
 		}
-
-		session.mu.Unlock()
 	}
+}
+
+// generateQRCode generates QR code for a session (legacy method)
+func (qm *QRManager) generateQRCode(session *QRCodeSession) {
+	qm.generateQRCodeWithContext(context.Background(), session)
 }
 
 // updateSessionStatus updates the session status and database
@@ -192,9 +237,16 @@ func (qm *QRManager) updateSessionStatus(session *QRCodeSession, status string) 
 	}
 }
 
-// GetQRCode retrieves the QR code for a given token
-func (qm *QRManager) GetQRCode(token string) (*QRCodeSession, error) {
-	log.Printf("DEBUG: GetQRCode called with token: %s", token)
+// GetQRCodeWithContext retrieves the QR code for a given token with context support
+func (qm *QRManager) GetQRCodeWithContext(ctx context.Context, token string) (*QRCodeSession, error) {
+	log.Printf("DEBUG: GetQRCodeWithContext called with token: %s", token)
+
+	// Check if context is cancelled
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 
 	qm.mu.RLock()
 	session, exists := qm.sessions[token]
@@ -224,6 +276,11 @@ func (qm *QRManager) GetQRCode(token string) (*QRCodeSession, error) {
 
 	log.Printf("DEBUG: Session is valid, returning session")
 	return session, nil
+}
+
+// GetQRCode retrieves the QR code for a given token (legacy method)
+func (qm *QRManager) GetQRCode(token string) (*QRCodeSession, error) {
+	return qm.GetQRCodeWithContext(context.Background(), token)
 }
 
 // CleanupExpiredSessions removes expired sessions
