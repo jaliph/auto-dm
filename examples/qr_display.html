@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Display Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .qr-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .qr-image {
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: white;
+        }
+        .instructions {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .code {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>QR Code Display Example</h1>
+    
+    <div class="instructions">
+        <h2>How to Display QR Code PNG</h2>
+        <p>When you get a QR code response from the API, you can display the PNG image like this:</p>
+        
+        <div class="code">
+&lt;img src="data:image/png;base64,{qr_code_png}" alt="QR Code"&gt;
+        </div>
+        
+        <p>Replace <code>{qr_code_png}</code> with the actual base64 string from the API response.</p>
+    </div>
+
+    <div class="qr-container">
+        <h3>Example QR Code Display</h3>
+        <div class="qr-image">
+            <img id="qrImage" alt="QR Code will be displayed here" style="display: none;">
+        </div>
+        <p id="qrText">QR code will be loaded here</p>
+    </div>
+
+    <div class="instructions">
+        <h2>API Usage</h2>
+        <p>To get a QR code:</p>
+        <ol>
+            <li>Register a sender: <code>POST /register</code></li>
+            <li>Get QR code: <code>GET /qr/{token}</code></li>
+            <li>Display the PNG using the base64 data</li>
+        </ol>
+    </div>
+
+    <script>
+        // Example of how to use the QR code PNG
+        function displayQRCode(qrCodePNG) {
+            const img = document.getElementById('qrImage');
+            const text = document.getElementById('qrText');
+            
+            if (qrCodePNG) {
+                img.src = `data:image/png;base64,${qrCodePNG}`;
+                img.style.display = 'block';
+                text.style.display = 'none';
+            } else {
+                img.style.display = 'none';
+                text.textContent = 'No QR code available';
+                text.style.display = 'block';
+            }
+        }
+
+        // Example: You would call this with the actual QR code PNG from the API
+        // displayQRCode('iVBORw0KGgoAAAANSUhEUgAA...');
+    </script>
+</body>
+</html>
