@@ -118,9 +118,43 @@ auto-dm/
 
 Download the latest release from [GitHub Releases](https://github.com/jaliph/auto-dm/releases) for your platform:
 
-- **Linux**: `auto-dm_Linux_x86_64.tar.gz`
-- **macOS**: `auto-dm_Darwin_x86_64.tar.gz` or `auto-dm_Darwin_arm64.tar.gz`
-- **Windows**: `auto-dm_Windows_x86_64.zip`
+- **Linux**: `auto-dm_Linux_amd64.tar.gz` or `auto-dm_Linux_arm64.tar.gz`
+- **macOS**: `auto-dm_Darwin_amd64.tar.gz` or `auto-dm_Darwin_arm64.tar.gz`
+- **Windows**: `auto-dm_Windows_amd64.zip` or `auto-dm_Windows_arm64.zip`
+
+#### **Setup for Binary Users**:
+
+1. **Extract the binary** to a directory of your choice
+2. **Create configuration** (optional):
+   ```bash
+   # Copy the example config
+   cp config.ini.example config.ini
+   
+   # Edit the configuration
+   nano config.ini  # or use any text editor
+   ```
+3. **Create file sharing folder** (optional):
+   ```bash
+   mkdir files
+   # Place files you want to share in this folder
+   ```
+4. **Run the application**:
+   ```bash
+   ./auto-dm  # Linux/macOS
+   auto-dm.exe  # Windows
+   ```
+
+**Directory Structure After Setup**:
+```
+your-auto-dm-folder/
+├── auto-dm              # The executable
+├── config.ini           # Configuration (optional)
+├── files/               # File sharing folder (auto-created)
+│   └── your-files.pdf   # Files to share
+└── db/                  # Database folder (auto-created)
+    ├── store.db         # Main database
+    └── user_*.db        # Sender databases
+```
 
 ### Option 2: Build from Source
 
@@ -327,18 +361,103 @@ make clean
 # Clean everything including databases
 make clean-all
 
+# Release commands
+make release-dry-run    # Test GoReleaser configuration
+make release-snapshot   # Create snapshot release
+make release           # Create full release
+make install-goreleaser # Install GoReleaser
+
 # Show all available commands
 make help
 ```
 
+### Creating Releases
+
+This project uses [GoReleaser](https://goreleaser.com/) for automated releases.
+
+#### Prerequisites
+1. Install GoReleaser:
+   ```bash
+   make install-goreleaser
+   ```
+
+2. Set up GitHub token for releases (if creating releases manually)
+
+#### Creating a Release
+
+1. **Create a new tag**:
+   ```bash
+   git tag -a v1.0.0 -m "Release v1.0.0"
+   git push origin v1.0.0
+   ```
+
+2. **Create a release** (automated via GitHub Actions):
+   - Push a tag starting with `v*` (e.g., `v1.0.0`)
+   - GitHub Actions will automatically create a release with binaries for all platforms
+
+3. **Manual release** (if needed):
+   ```bash
+   # Dry run to test
+   make release-dry-run
+   
+   # Create snapshot release
+   make release-snapshot
+   
+   # Create full release
+   make release
+   ```
+
+#### Release Artifacts
+Each release includes:
+- **Binaries**: Linux (x86_64, ARM64), macOS (x86_64, ARM64), Windows (x86_64, ARM64)
+- **Docker Images**: `ghcr.io/jaliph/auto-dm:latest` and `ghcr.io/jaliph/auto-dm:v1.0.0`
+- **Homebrew Formula**: `jaliph/tap/auto-dm`
+- **Checksums**: SHA256 checksums for all binaries
+
 ## Configuration
 
-The application uses the following default settings:
+### **Configuration Methods**:
+
+#### **1. Environment Variables** (Recommended for production):
+```bash
+export MSSQL_SERVER="localhost"
+export MSSQL_DATABASE="whatsapp_automation"
+export MSSQL_USERNAME="sa"
+export MSSQL_PASSWORD="YourPassword123!"
+export API_PORT=":8080"
+export FILE_SHARE_FOLDER="./files"
+```
+
+#### **2. config.ini File** (Recommended for development):
+```ini
+[database]
+mssql_server = localhost
+mssql_database = whatsapp_automation
+mssql_username = sa
+mssql_password = YourPassword123!
+
+[api]
+port = :8080
+
+[whatsapp]
+connection_check_interval = 1
+
+[files]
+share_folder = ./files
+```
+
+#### **3. Default Values** (fallback):
 - **API Server**: `:8080`
 - **QR Code Expiry**: 10 minutes
 - **Connection Check Interval**: 1 minute
 - **Database Files**: SQLite files in the `db/` directory
+- **File Sharing**: `./files` directory
 - **Build Output**: Binary files in the `build/` directory
+
+### **Configuration Priority**:
+1. **`config.ini`** (highest priority)
+2. **Environment variables** (fallback)
+3. **Default values** (lowest priority)
 
 ## Dependencies
 

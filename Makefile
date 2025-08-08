@@ -129,17 +129,17 @@ check: fmt vet lint
 .PHONY: release
 release:
 	@echo "Creating release with GoReleaser..."
-	@goreleaser release --rm-dist
+	@goreleaser release --clean
 
 .PHONY: release-snapshot
 release-snapshot:
 	@echo "Creating snapshot release with GoReleaser..."
-	@goreleaser release --snapshot --rm-dist --skip-publish
+	@goreleaser release --snapshot --clean --skip=publish
 
 .PHONY: release-dry-run
 release-dry-run:
 	@echo "Running GoReleaser dry run..."
-	@goreleaser release --snapshot --rm-dist --skip-publish --skip-validate
+	@goreleaser release --snapshot --clean --skip=publish --skip=validate
 
 # Install GoReleaser
 .PHONY: install-goreleaser

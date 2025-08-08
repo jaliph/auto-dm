@@ -1,0 +1,105 @@
+# GoReleaser configuration for Auto-DM WhatsApp Automation App
+# https://goreleaser.com/
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    binary: auto-dm
+    hooks:
+      post:
+        - cmd: sh -c 'echo "Built binary"'
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ title .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - config.ini.example
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+brews:
+  - name: auto-dm
+    homepage: "https://github.com/jaliph/auto-dm"
+    description: "WhatsApp automation app with self-service sender registration"
+    repository:
+      name: homebrew-tap
+      owner: jaliph
+    commit_author:
+      name: "Auto-DM Bot"
+      email: "bot@jaliph.com"
+    folder: Formula
+    goarm: "6"
+    install: |
+      bin.install "auto-dm"
+      etc.install "config.ini.example" => "auto-dm.ini.example"
+
+dockers:
+  - image_templates:
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Version }}"
+      - "ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:latest"
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--platform=linux/arm64"
+    use: buildx
+
+release:
+  draft: false
+  prerelease: false
+  name_template: 'v{{ .Version }}'
+  footer: |
+    ## Installation
+
+    ### Binary
+    Download the appropriate binary for your platform from the assets above.
+
+    ### Homebrew (macOS/Linux)
+    ```bash
+    brew install jaliph/tap/auto-dm
+    ```
+
+    ### Docker
+    ```bash
+    docker pull ghcr.io/jaliph/auto-dm:latest
+    ```
+
+    ## Configuration
+    Copy `config.ini.example` to `config.ini` and update the settings.
+
+    ## Documentation
+    See [README.md](https://github.com/jaliph/auto-dm#readme) for full documentation.

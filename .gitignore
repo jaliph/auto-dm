@@ -45,3 +45,7 @@ config.ini
 
 # Examples (keep in repo)
 # examples/
+
+build/*
+dist/*
+files/*

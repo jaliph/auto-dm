@@ -4,10 +4,10 @@ go 1.24.5
 
 require (
 	github.com/mattn/go-sqlite3 v1.14.30
-	github.com/mdp/qrterminal/v3 v3.0.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.mau.fi/whatsmeow v0.0.0-20250807072145-72ce90b82194
 	google.golang.org/protobuf v1.36.6
+	gopkg.in/ini.v1 v1.67.0
 	gorm.io/driver/sqlserver v1.5.2
 	gorm.io/gorm v1.25.5
 )
@@ -32,6 +32,4 @@ require (
 	golang.org/x/net v0.42.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
-	gopkg.in/ini.v1 v1.67.0 // indirect
-	rsc.io/qr v0.2.0 // indirect
 )
