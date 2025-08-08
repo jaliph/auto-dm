@@ -20,7 +20,7 @@ type Database struct {
 
 // NewDatabase creates a new database instance
 func NewDatabase(gormDB *GormDB) (*Database, error) {
-	// Ensure db directory exists
+	// Ensure db directory exists (cross-platform permissions)
 	if err := os.MkdirAll("db", 0755); err != nil {
 		return nil, fmt.Errorf("failed to create db directory: %v", err)
 	}

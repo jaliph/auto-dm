@@ -112,7 +112,7 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create QR URL
+	// Create QR URL (cross-platform URL construction)
 	qrURL := fmt.Sprintf("%s/qr/%s", h.baseURL, session.Token)
 
 	response := models.RegisterResponse{
