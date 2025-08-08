@@ -43,7 +43,7 @@ auto-dm/
 - **Register Sender**: `POST /register` with JSON body:
   ```json
   {
-    "phone": "1234567890"
+    "phone": "911234567890"
   }
   ```
      Returns:
