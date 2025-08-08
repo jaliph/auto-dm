@@ -48,21 +48,27 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Build for platform
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            go build -o auto-dm.exe main.go
-          else
-            go build -o auto-dm main.go
-          fi
+      - name: Build for platform (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: go build -o auto-dm main.go
 
-      - name: Upload build artifact
+      - name: Build for platform (Windows)
+        if: runner.os == 'Windows'
+        run: go build -o auto-dm.exe main.go
+
+      - name: Upload build artifact (Linux/macOS)
+        if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: auto-dm-${{ runner.os }}
-          path: |
-            auto-dm
-            auto-dm.exe
+          path: auto-dm
+
+      - name: Upload build artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-dm-${{ runner.os }}
+          path: auto-dm.exe
 
   cross-platform-build:
     runs-on: ubuntu-latest
