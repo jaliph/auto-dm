@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 )

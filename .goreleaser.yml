@@ -6,11 +6,30 @@ before:
     - go mod tidy
 
 builds:
-  - env:
-      - CGO_ENABLED=0
+  # Linux builds (CGO enabled for sqlite3)
+  - id: linux
+    env:
+      - CGO_ENABLED=1
     goos:
       - linux
-      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    binary: auto-dm
+    hooks:
+      post:
+        - cmd: sh -c 'echo "Built Linux binary"'
+
+  # macOS builds (CGO enabled for sqlite3)
+  - id: darwin
+    env:
+      - CGO_ENABLED=1
+    goos:
       - darwin
     goarch:
       - amd64
@@ -23,7 +42,29 @@ builds:
     binary: auto-dm
     hooks:
       post:
-        - cmd: sh -c 'echo "Built binary"'
+        - cmd: sh -c 'echo "Built macOS binary"'
+
+  # Windows builds (CGO enabled for sqlite3)
+  - id: windows
+    env:
+      - CGO_ENABLED=1
+      - CC=x86_64-w64-mingw32-gcc
+      - CXX=x86_64-w64-mingw32-g++
+      - CGO_LDFLAGS=-L/usr/x86_64-w64-mingw32/lib
+      - CGO_CFLAGS=-I/usr/x86_64-w64-mingw32/include
+    goos:
+      - windows
+    goarch:
+      - amd64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    binary: auto-dm
+    hooks:
+      post:
+        - cmd: sh -c 'echo "Built Windows binary"'
 
 archives:
   - format: tar.gz

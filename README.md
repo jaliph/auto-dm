@@ -76,6 +76,7 @@ auto-dm/
 
 - **Get QR Code**: `GET /qr/{token}` - Get QR code for authentication
 - **Get Senders**: `GET /senders` - Get all registered senders with their status
+- **Delete Sender**: `DELETE /senders/{phone}` - Delete a registered sender
 - **Send Message**: `POST /send` with JSON body:
   ```json
   {
@@ -271,6 +272,11 @@ your-auto-dm-folder/
 4. **Check Sender Status**:
    ```bash
    curl "http://localhost:8080/senders"
+
+5. **Delete a Sender**:
+   ```bash
+   curl -X DELETE "http://localhost:8080/senders/911234567890"
+   ```
    ```
 
 5. **Send Messages via API**:

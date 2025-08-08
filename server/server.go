@@ -48,6 +48,7 @@ func (s *Server) Start(addr string) error {
 	http.HandleFunc("/register", s.handler.HandleRegister)
 	http.HandleFunc("/qr/", s.handleQRCode)
 	http.HandleFunc("/senders", s.handler.HandleGetSenders)
+	http.HandleFunc("/senders/", s.handleDeleteSender)
 	http.HandleFunc("/send", s.handler.HandleSendMessage)
 	http.HandleFunc("/messages", s.handler.HandleGetMessages)
 	http.HandleFunc("/stats", s.handler.HandleGetStats)
@@ -97,4 +98,31 @@ func (s *Server) handleQRCode(w http.ResponseWriter, r *http.Request) {
 	r.URL.Path = "/qr/" + token
 	log.Printf("DEBUG: Calling HandleGetQRCode with modified path: %s", r.URL.Path)
 	s.handler.HandleGetQRCode(w, r)
+}
+
+// handleDeleteSender handles DELETE requests for /senders/{phone}
+func (s *Server) handleDeleteSender(w http.ResponseWriter, r *http.Request) {
+	log.Printf("DEBUG: handleDeleteSender called with path: %s", r.URL.Path)
+
+	// Extract phone number from URL path
+	path := r.URL.Path
+	if !strings.HasPrefix(path, "/senders/") {
+		log.Printf("DEBUG: Path doesn't start with /senders/: %s", path)
+		http.Error(w, "Invalid sender URL", http.StatusBadRequest)
+		return
+	}
+
+	// Remove /senders/ prefix to get phone number
+	phone := strings.TrimPrefix(path, "/senders/")
+	log.Printf("DEBUG: Extracted phone: %s", phone)
+	if phone == "" {
+		log.Printf("DEBUG: Empty phone number")
+		http.Error(w, "Missing phone number", http.StatusBadRequest)
+		return
+	}
+
+	// Create a new request with the phone in the path for the handler
+	r.URL.Path = "/senders/" + phone
+	log.Printf("DEBUG: Calling HandleDeleteSender with modified path: %s", r.URL.Path)
+	s.handler.HandleDeleteSender(w, r)
 }

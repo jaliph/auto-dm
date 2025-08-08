@@ -205,3 +205,12 @@ func (gdb *GormDB) ForceSyncAllSenders(sqliteDB interface {
 	log.Printf("Force syncing %d senders from SQLite to MSSQL", len(senders))
 	return gdb.SyncAllSendersToMSSQL(senders)
 }
+
+// DeleteSender deletes a sender from MSSQL database
+func (gdb *GormDB) DeleteSender(phone string) error {
+	result := gdb.db.Where("phone = ?", phone).Delete(&models.Sender{})
+	if result.Error != nil {
+		return fmt.Errorf("failed to delete sender from MSSQL: %v", result.Error)
+	}
+	return nil
+}

@@ -277,6 +277,76 @@ func (h *Handler) HandleGetSenders(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(senders)
 }
 
+// HandleDeleteSender handles the /senders/{phone} DELETE API endpoint
+func (h *Handler) HandleDeleteSender(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract phone number from URL path
+	// Assuming URL pattern is /senders/{phone}
+	path := r.URL.Path
+	if !strings.HasPrefix(path, "/senders/") {
+		http.Error(w, "Invalid endpoint", http.StatusBadRequest)
+		return
+	}
+
+	phone := strings.TrimPrefix(path, "/senders/")
+	if phone == "" {
+		response := models.APIResponse{
+			Status: "error",
+			Error:  "Phone number is required",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Check if sender exists
+	_, err := h.db.GetSender(phone)
+	if err != nil {
+		response := models.APIResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Sender not found: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Disconnect the sender if they're connected
+	h.userStoreManager.DisconnectUser(phone)
+
+	// Delete sender from SQLite database
+	if err := h.db.DeleteSender(phone); err != nil {
+		response := models.APIResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Failed to delete sender: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Sync deletion to MSSQL
+	if err := h.gormDB.DeleteSender(phone); err != nil {
+		log.Printf("Warning: Failed to delete sender from MSSQL: %v", err)
+		// Don't return error as the main deletion succeeded
+	}
+
+	response := models.APIResponse{
+		Status:  "success",
+		Message: fmt.Sprintf("Sender %s deleted successfully", phone),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
 // HandleSendMessage handles the /send API endpoint
 func (h *Handler) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {

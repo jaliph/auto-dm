@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/jaliph/auto-dm/models"
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // Database represents the database connection and operations
@@ -25,7 +25,7 @@ func NewDatabase(gormDB *GormDB) (*Database, error) {
 		return nil, fmt.Errorf("failed to create db directory: %v", err)
 	}
 
-	db, err := sql.Open("sqlite", filepath.Join("db", "store.db"))
+	db, err := sql.Open("sqlite3", filepath.Join("db", "store.db")+"?_foreign_keys=on")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %v", err)
 	}
@@ -264,6 +264,24 @@ func (d *Database) SenderExists(phone string) bool {
 	var status string
 	err := d.db.QueryRow("SELECT status FROM senders WHERE phone = ?", phone).Scan(&status)
 	return err == nil
+}
+
+// DeleteSender deletes a sender from the database
+func (d *Database) DeleteSender(phone string) error {
+	// Delete from senders table
+	_, err := d.db.Exec("DELETE FROM senders WHERE phone = ?", phone)
+	if err != nil {
+		return fmt.Errorf("failed to delete sender: %v", err)
+	}
+
+	// Delete from phone_map table (if exists)
+	_, err = d.db.Exec("DELETE FROM phone_map WHERE phone = ?", phone)
+	if err != nil {
+		log.Printf("Warning: Failed to delete phone mapping for %s: %v", phone, err)
+		// Don't return error as the main deletion succeeded
+	}
+
+	return nil
 }
 
 // Close closes the database connection
