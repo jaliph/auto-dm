@@ -232,7 +232,7 @@ func (cm *ClientManager) SendMessage(senderPhone, recipient, message string) err
 	if err := cm.gormDB.StoreMessage(sentMessage); err != nil {
 		log.Printf("Warning: Failed to store sent message in database: %v", err)
 	} else {
-		log.Printf("DEBUG: Stored sent message in database - ID: %s", messageID)
+		log.Printf("DEBUG: Stored sent message in database - ID: %s", messageID.ID)
 	}
 
 	log.Printf("Message sent from %s to %s: %s", senderPhone, recipient, message)
