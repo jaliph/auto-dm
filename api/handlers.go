@@ -549,30 +549,14 @@ func (h *Handler) sendMessageWithContext(ctx context.Context, senderPhone, recip
 	default:
 	}
 
-	// Send the message
+	// Send the message (this will also store it in the database)
 	err := h.clientManager.SendMessage(senderPhone, recipient, message)
 	if err != nil {
 		return err
 	}
 
-	// Record sent message to MSSQL
-	sentMessage := models.Message{
-		SenderPhone:    senderPhone,
-		RecipientPhone: recipient,
-		MessageType:    "text",
-		Content:        message,
-		Timestamp:      time.Now(),
-		IsFromMe:       true,
-		ChatID:         recipient + "@s.whatsapp.net",
-		MessageID:      generateMessageID(),
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-	}
-
-	if err := h.gormDB.StoreMessage(&sentMessage); err != nil {
-		log.Printf("Warning: Failed to record sent message to MSSQL: %v", err)
-		// Don't return error as the message was sent successfully
-	}
+	// Message is automatically stored by SendMessage function
+	log.Printf("DEBUG: Message sent and stored via API - Sender: %s, Recipient: %s", senderPhone, recipient)
 
 	return nil
 }
@@ -594,31 +578,14 @@ func (h *Handler) sendFileWithContext(ctx context.Context, senderPhone, recipien
 		return fmt.Errorf("file not found: %s", fileName)
 	}
 
-	// Send file using client manager
+	// Send file using client manager (this will also store it in the database)
 	err := h.clientManager.SendFile(senderPhone, recipient, filePath)
 	if err != nil {
 		return err
 	}
 
-	// Record sent file message to MSSQL
-	sentMessage := models.Message{
-		SenderPhone:    senderPhone,
-		RecipientPhone: recipient,
-		MessageType:    "file",
-		Content:        fileName, // Store filename as content
-		MediaURL:       filePath, // Store file path as media URL
-		Timestamp:      time.Now(),
-		IsFromMe:       true,
-		ChatID:         recipient + "@s.whatsapp.net",
-		MessageID:      generateMessageID(),
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-	}
-
-	if err := h.gormDB.StoreMessage(&sentMessage); err != nil {
-		log.Printf("Warning: Failed to record sent file message to MSSQL: %v", err)
-		// Don't return error as the file was sent successfully
-	}
+	// File message is automatically stored by SendFile function
+	log.Printf("DEBUG: File sent and stored via API - Sender: %s, Recipient: %s, File: %s", senderPhone, recipient, fileName)
 
 	return nil
 }

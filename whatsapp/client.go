@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/jaliph/auto-dm/database"
+	"github.com/jaliph/auto-dm/models"
 	"github.com/jaliph/auto-dm/store"
 	"github.com/jaliph/auto-dm/utils"
 )
@@ -207,12 +208,31 @@ func (cm *ClientManager) SendMessage(senderPhone, recipient, message string) err
 	}
 
 	// Send message
-	_, err := client.SendMessage(context.Background(), types.JID{
+	messageID, err := client.SendMessage(context.Background(), types.JID{
 		User:   recipient,
 		Server: types.DefaultUserServer,
 	}, msg)
 	if err != nil {
 		return fmt.Errorf("failed to send message: %v", err)
+	}
+
+	// Store the sent message in database
+	sentMessage := &models.Message{
+		SenderPhone:    senderPhone,
+		RecipientPhone: recipient,
+		MessageType:    "text",
+		Content:        message,
+		MediaURL:       "",
+		Timestamp:      time.Now(),
+		IsFromMe:       true,
+		ChatID:         fmt.Sprintf("%s@s.whatsapp.net", recipient),
+		MessageID:      messageID.ID,
+	}
+
+	if err := cm.gormDB.StoreMessage(sentMessage); err != nil {
+		log.Printf("Warning: Failed to store sent message in database: %v", err)
+	} else {
+		log.Printf("DEBUG: Stored sent message in database - ID: %s", messageID)
 	}
 
 	log.Printf("Message sent from %s to %s: %s", senderPhone, recipient, message)
@@ -266,12 +286,31 @@ func (cm *ClientManager) SendFile(senderPhone, recipient, filePath string) error
 	}
 
 	// Send file
-	_, err = client.SendMessage(context.Background(), types.JID{
+	messageID, err := client.SendMessage(context.Background(), types.JID{
 		User:   recipient,
 		Server: types.DefaultUserServer,
 	}, msg)
 	if err != nil {
 		return fmt.Errorf("failed to send file: %v", err)
+	}
+
+	// Store the sent file message in database
+	sentMessage := &models.Message{
+		SenderPhone:    senderPhone,
+		RecipientPhone: recipient,
+		MessageType:    "file",
+		Content:        fileInfo.Name(), // Store filename as content
+		MediaURL:       filePath,        // Store file path as media URL
+		Timestamp:      time.Now(),
+		IsFromMe:       true,
+		ChatID:         fmt.Sprintf("%s@s.whatsapp.net", recipient),
+		MessageID:      messageID.ID,
+	}
+
+	if err := cm.gormDB.StoreMessage(sentMessage); err != nil {
+		log.Printf("Warning: Failed to store sent file message in database: %v", err)
+	} else {
+		log.Printf("DEBUG: Stored sent file message in database - ID: %s", messageID.ID)
 	}
 
 	log.Printf("File sent from %s to %s: %s", senderPhone, recipient, fileInfo.Name())
