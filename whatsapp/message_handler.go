@@ -58,11 +58,13 @@ func (mh *MessageHandler) HandleMessageEvent(evt *events.Message, authenticatedS
 	messageType := mh.getMessageType(evt.Message)
 	content := mh.getMessageContent(evt.Message)
 
-	// Download media file if present and store local path
+	// Download media file if present and store local path (concurrent)
 	var localFilePath string
 	if !evt.Info.IsFromMe && mh.hasMedia(evt.Message) {
-		// Only download media for received messages (not sent by us)
-		localFilePath = mh.downloadMediaFile(evt.Message, evt.Info.ID, messageType, client)
+		// Only download media for received messages (not sent by us) - do it concurrently
+		go mh.downloadMediaFileAsync(evt.Message, evt.Info.ID, messageType, client, authenticatedSenderPhone)
+		// For now, set a placeholder - the actual path will be updated in the database later
+		localFilePath = fmt.Sprintf("downloading_%s_%s", evt.Info.ID, messageType)
 	}
 
 	// Create message model
@@ -162,10 +164,24 @@ func (mh *MessageHandler) hasMedia(msg *waE2E.Message) bool {
 
 // downloadMediaFile downloads a media file using WhatsApp client and saves it to the receive folder
 func (mh *MessageHandler) downloadMediaFile(msg *waE2E.Message, messageID, messageType string, client *whatsmeow.Client) string {
+	// Ensure receive folder exists
+	if err := os.MkdirAll(mh.receiveFolder, 0755); err != nil {
+		log.Printf("ERROR: Failed to create receive folder %s: %v", mh.receiveFolder, err)
+		return ""
+	}
+
 	// Generate filename based on message ID and type
 	extension := mh.getFileExtension(messageType)
 	filename := fmt.Sprintf("%s_%s%s", messageID, messageType, extension)
 	filePath := filepath.Join(mh.receiveFolder, filename)
+
+	log.Printf("DEBUG: Starting media download - Type: %s, File: %s", messageType, filePath)
+
+	// Check if client is available for download
+	if client == nil {
+		log.Printf("ERROR: WhatsApp client is nil, cannot download media")
+		return ""
+	}
 
 	// Create the file
 	file, err := os.Create(filePath)
@@ -175,32 +191,61 @@ func (mh *MessageHandler) downloadMediaFile(msg *waE2E.Message, messageID, messa
 	}
 	defer file.Close()
 
-	// Download the media using WhatsApp client based on message type
-	ctx := context.Background()
+	// Create a timeout context for the download (30 seconds)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
+	// Download the media using WhatsApp client based on message type
 	switch messageType {
 	case "image":
 		if msg.ImageMessage != nil {
+			log.Printf("DEBUG: Downloading image message")
 			err = client.DownloadToFile(ctx, msg.ImageMessage, file)
+		} else {
+			log.Printf("DEBUG: Image message is nil")
+			err = fmt.Errorf("image message is nil")
 		}
 	case "video":
 		if msg.VideoMessage != nil {
+			log.Printf("DEBUG: Downloading video message")
 			err = client.DownloadToFile(ctx, msg.VideoMessage, file)
+		} else {
+			log.Printf("DEBUG: Video message is nil")
+			err = fmt.Errorf("video message is nil")
 		}
 	case "audio":
 		if msg.AudioMessage != nil {
+			log.Printf("DEBUG: Downloading audio message")
 			err = client.DownloadToFile(ctx, msg.AudioMessage, file)
+		} else {
+			log.Printf("DEBUG: Audio message is nil")
+			err = fmt.Errorf("audio message is nil")
 		}
 	case "document":
 		if msg.DocumentMessage != nil {
+			log.Printf("DEBUG: Downloading document message")
 			err = client.DownloadToFile(ctx, msg.DocumentMessage, file)
+		} else {
+			log.Printf("DEBUG: Document message is nil")
+			err = fmt.Errorf("document message is nil")
 		}
 	case "sticker":
 		if msg.StickerMessage != nil {
+			log.Printf("DEBUG: Downloading sticker message")
 			err = client.DownloadToFile(ctx, msg.StickerMessage, file)
+		} else {
+			log.Printf("DEBUG: Sticker message is nil")
+			err = fmt.Errorf("sticker message is nil")
 		}
 	default:
 		log.Printf("Unsupported media type: %s", messageType)
+		return ""
+	}
+
+	// Check for context timeout
+	if ctx.Err() == context.DeadlineExceeded {
+		log.Printf("ERROR: Media download timed out after 30 seconds for %s", filePath)
+		os.Remove(filePath)
 		return ""
 	}
 
@@ -213,6 +258,34 @@ func (mh *MessageHandler) downloadMediaFile(msg *waE2E.Message, messageID, messa
 
 	log.Printf("Downloaded media file: %s", filePath)
 	return filePath
+}
+
+// downloadMediaFileAsync downloads media file asynchronously and updates the database
+func (mh *MessageHandler) downloadMediaFileAsync(msg *waE2E.Message, messageID, messageType string, client *whatsmeow.Client, authenticatedSenderPhone string) {
+	log.Printf("DEBUG: Starting async media download for message %s, type: %s", messageID, messageType)
+
+	// Download the media file
+	filePath := mh.downloadMediaFile(msg, messageID, messageType, client)
+
+	if filePath != "" {
+		// Update the database with the actual file path
+		if err := mh.updateMessageMediaPath(messageID, filePath); err != nil {
+			log.Printf("ERROR: Failed to update message media path in database: %v", err)
+		} else {
+			log.Printf("DEBUG: Successfully updated message %s with media path: %s", messageID, filePath)
+		}
+	} else {
+		log.Printf("ERROR: Failed to download media for message %s", messageID)
+		// Update database to indicate download failed
+		if err := mh.updateMessageMediaPath(messageID, "download_failed"); err != nil {
+			log.Printf("ERROR: Failed to update message download status in database: %v", err)
+		}
+	}
+}
+
+// updateMessageMediaPath updates the media URL field for a specific message
+func (mh *MessageHandler) updateMessageMediaPath(messageID, mediaPath string) error {
+	return mh.gormDB.UpdateMessageMediaPath(messageID, mediaPath)
 }
 
 // cleanAIResponse removes internal thinking and other unwanted content from AI responses

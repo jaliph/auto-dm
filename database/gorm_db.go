@@ -224,3 +224,21 @@ func (gdb *GormDB) DeleteSender(phone string) error {
 	}
 	return nil
 }
+
+// UpdateMessageMediaPath updates the media URL field for a specific message
+func (gdb *GormDB) UpdateMessageMediaPath(messageID, mediaPath string) error {
+	// Find the message by MessageID and update its MediaURL field
+	result := gdb.db.Model(&models.Message{}).
+		Where("message_id = ?", messageID).
+		Update("media_url", mediaPath)
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update message media path: %v", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("no message found with ID: %s", messageID)
+	}
+
+	return nil
+}
