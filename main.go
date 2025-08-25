@@ -10,6 +10,7 @@ import (
 	"github.com/jaliph/auto-dm/database"
 	"github.com/jaliph/auto-dm/server"
 	"github.com/jaliph/auto-dm/store"
+	"github.com/jaliph/auto-dm/utils"
 	"github.com/jaliph/auto-dm/whatsapp"
 )
 
@@ -64,8 +65,25 @@ func main() {
 	userStoreManager := store.NewUserStoreManager()
 	defer userStoreManager.CloseAll()
 
+	// Initialize Ollama client (conditionally)
+	var ollamaClient *utils.OllamaClient
+	if cfg.OllamaURL != "" && cfg.OllamaModel != "" {
+		ollamaClient = utils.NewOllamaClient(cfg.OllamaURL, cfg.OllamaModel)
+		log.Printf("Ollama client initialized with URL: %s, Model: %s", cfg.OllamaURL, cfg.OllamaModel)
+
+		// Test Ollama connection
+		if err := ollamaClient.TestConnection(); err != nil {
+			log.Printf("WARNING: Ollama connection failed, auto-reply feature will be disabled: %v", err)
+			ollamaClient = nil
+		} else {
+			log.Printf("✅ Ollama connection successful, auto-reply feature enabled")
+		}
+	} else {
+		log.Printf("Ollama not configured (URL: %s, Model: %s), auto-reply feature disabled", cfg.OllamaURL, cfg.OllamaModel)
+	}
+
 	// Initialize WhatsApp client manager (without admin functionality)
-	clientManager := whatsapp.NewClientManager(userStoreManager, db, gormDB, cfg.ReceiveFolder)
+	clientManager := whatsapp.NewClientManager(userStoreManager, db, gormDB, cfg.ReceiveFolder, ollamaClient)
 
 	// Initialize QR manager with authentication callback
 	qrManager := whatsapp.NewQRManager(db, userStoreManager, clientManager)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/jaliph/auto-dm/database"
 	"github.com/jaliph/auto-dm/store"
+	"github.com/jaliph/auto-dm/utils"
 )
 
 // ClientManager manages WhatsApp clients for senders
@@ -30,9 +31,9 @@ type ClientManager struct {
 }
 
 // NewClientManager creates a new WhatsApp client manager
-func NewClientManager(userStoreManager *store.UserStoreManager, db *database.Database, gormDB *database.GormDB, receiveFolder string) *ClientManager {
-	messageHandler := NewMessageHandler(gormDB, receiveFolder)
-	return &ClientManager{
+func NewClientManager(userStoreManager *store.UserStoreManager, db *database.Database, gormDB *database.GormDB, receiveFolder string, ollamaClient *utils.OllamaClient) *ClientManager {
+	messageHandler := NewMessageHandler(gormDB, receiveFolder, ollamaClient, nil) // Will set clientManager reference after creation
+	clientManager := &ClientManager{
 		userStoreManager: userStoreManager,
 		db:               db,
 		gormDB:           gormDB,
@@ -40,6 +41,9 @@ func NewClientManager(userStoreManager *store.UserStoreManager, db *database.Dat
 		clientToPhone:    make(map[*whatsmeow.Client]string),
 		receiveFolder:    receiveFolder,
 	}
+	// Set the client manager reference in the message handler
+	messageHandler.clientManager = clientManager
+	return clientManager
 }
 
 // LoadAllSenders loads all previously registered senders from database

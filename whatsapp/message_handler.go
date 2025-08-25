@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"go.mau.fi/whatsmeow"
@@ -14,19 +15,24 @@ import (
 
 	"github.com/jaliph/auto-dm/database"
 	"github.com/jaliph/auto-dm/models"
+	"github.com/jaliph/auto-dm/utils"
 )
 
 // MessageHandler handles WhatsApp message events and stores them in the database
 type MessageHandler struct {
 	gormDB        *database.GormDB
-	receiveFolder string // Folder to store received media files
+	receiveFolder string              // Folder to store received media files
+	ollamaClient  *utils.OllamaClient // Ollama client for AI responses
+	clientManager *ClientManager      // Reference to client manager for sending responses
 }
 
 // NewMessageHandler creates a new message handler
-func NewMessageHandler(gormDB *database.GormDB, receiveFolder string) *MessageHandler {
+func NewMessageHandler(gormDB *database.GormDB, receiveFolder string, ollamaClient *utils.OllamaClient, clientManager *ClientManager) *MessageHandler {
 	return &MessageHandler{
 		gormDB:        gormDB,
 		receiveFolder: receiveFolder,
+		ollamaClient:  ollamaClient,
+		clientManager: clientManager,
 	}
 }
 
@@ -76,6 +82,11 @@ func (mh *MessageHandler) HandleMessageEvent(evt *events.Message, authenticatedS
 
 	log.Printf("Stored message from %s to %s: %s (IsFromMe: %v, Media: %s)",
 		message.SenderPhone, message.RecipientPhone, message.Content, evt.Info.IsFromMe, localFilePath)
+
+	// Handle auto-reply with Ollama for received text messages
+	if !evt.Info.IsFromMe && messageType == "text" && content != "" {
+		mh.handleAutoReply(senderPhone, recipientPhone, content)
+	}
 
 	return nil
 }
@@ -199,6 +210,127 @@ func (mh *MessageHandler) downloadMediaFile(msg *waE2E.Message, messageID, messa
 
 	log.Printf("Downloaded media file: %s", filePath)
 	return filePath
+}
+
+// cleanAIResponse removes internal thinking and other unwanted content from AI responses
+func (mh *MessageHandler) cleanAIResponse(response string) string {
+	// Remove <think>...</think> blocks
+	cleaned := response
+
+	// Remove thinking blocks (common in some AI models)
+	start := 0
+	for {
+		thinkStart := findSubstring(cleaned, "<think>", start)
+		if thinkStart == -1 {
+			break
+		}
+
+		thinkEnd := findSubstring(cleaned, "</think>", thinkStart)
+		if thinkEnd == -1 {
+			break
+		}
+
+		// Remove the entire <think>...</think> block
+		cleaned = cleaned[:thinkStart] + cleaned[thinkEnd+8:]
+		start = thinkStart
+	}
+
+	// Remove other common thinking patterns
+	patterns := []string{
+		"<thinking>", "</thinking>",
+		"<reasoning>", "</reasoning>",
+		"<internal>", "</internal>",
+		"<process>", "</process>",
+	}
+
+	for i := 0; i < len(patterns); i += 2 {
+		start := 0
+		for {
+			startTag := findSubstring(cleaned, patterns[i], start)
+			if startTag == -1 {
+				break
+			}
+
+			endTag := findSubstring(cleaned, patterns[i+1], startTag)
+			if endTag == -1 {
+				break
+			}
+
+			// Remove the entire block
+			tagLen := len(patterns[i+1])
+			cleaned = cleaned[:startTag] + cleaned[endTag+tagLen:]
+			start = startTag
+		}
+	}
+
+	// Trim whitespace and clean up
+	cleaned = strings.TrimSpace(cleaned)
+
+	// If the response is empty after cleaning, return a default message
+	if cleaned == "" {
+		return "I apologize, but I couldn't generate a proper response. Please try again."
+	}
+
+	return cleaned
+}
+
+// findSubstring finds a substring in a string, case-insensitive
+func findSubstring(s, substr string, start int) int {
+	if start >= len(s) {
+		return -1
+	}
+
+	// Convert to lowercase for case-insensitive search
+	sLower := strings.ToLower(s[start:])
+	substrLower := strings.ToLower(substr)
+
+	idx := strings.Index(sLower, substrLower)
+	if idx == -1 {
+		return -1
+	}
+
+	return start + idx
+}
+
+// handleAutoReply processes auto-replies using Ollama for received text messages
+func (mh *MessageHandler) handleAutoReply(senderPhone, recipientPhone, content string) {
+	// Check if Ollama is configured and working
+	if mh.ollamaClient == nil || !mh.ollamaClient.IsConfigured() {
+		log.Printf("DEBUG: Ollama not configured, skipping auto-reply")
+		return
+	}
+
+	// Test Ollama connection before processing
+	if err := mh.ollamaClient.TestConnection(); err != nil {
+		log.Printf("WARNING: Ollama connection failed, disabling auto-reply: %v", err)
+		// Disable Ollama client by setting it to nil
+		mh.ollamaClient = nil
+		return
+	}
+
+	// Generate AI response
+	log.Printf("DEBUG: Generating AI response for message from %s: %s", senderPhone, content)
+	aiResponse, err := mh.ollamaClient.GenerateResponse(content)
+	if err != nil {
+		log.Printf("ERROR: Failed to generate AI response: %v", err)
+		return
+	}
+
+	// Clean the AI response to remove internal thinking
+	cleanedResponse := mh.cleanAIResponse(aiResponse)
+	log.Printf("DEBUG: Original AI response: %s", aiResponse)
+	log.Printf("DEBUG: Cleaned AI response: %s", cleanedResponse)
+
+	// Send the cleaned AI response back to the sender
+	if mh.clientManager != nil {
+		if err := mh.clientManager.SendMessage(recipientPhone, senderPhone, cleanedResponse); err != nil {
+			log.Printf("ERROR: Failed to send AI response: %v", err)
+			return
+		}
+		log.Printf("✅ Auto-reply sent from %s to %s: %s", recipientPhone, senderPhone, cleanedResponse)
+	} else {
+		log.Printf("ERROR: Client manager not available for sending auto-reply")
+	}
 }
 
 // getFileExtension returns the appropriate file extension based on message type

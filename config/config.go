@@ -25,6 +25,10 @@ type Config struct {
 	// File sharing settings
 	FileShareFolder string // folder path for file sharing
 	ReceiveFolder   string // folder path for received media files
+
+	// Ollama settings
+	OllamaURL   string // Ollama server URL
+	OllamaModel string // Ollama model name
 }
 
 // LoadConfig loads configuration from config.ini file or environment variables
@@ -45,6 +49,10 @@ func LoadConfig() *Config {
 		// File sharing settings
 		FileShareFolder: getEnv("FILE_SHARE_FOLDER", "./files"),
 		ReceiveFolder:   getEnv("RECEIVE_FOLDER", "./received"),
+
+		// Ollama settings
+		OllamaURL:   getEnv("OLLAMA_URL", ""),
+		OllamaModel: getEnv("OLLAMA_MODEL", ""),
 	}
 
 	// Try to load from config.ini file
@@ -102,6 +110,16 @@ func loadFromINI(config *Config) error {
 		}
 		if receiveFolder := fileSection.Key("receive_folder").String(); receiveFolder != "" {
 			config.ReceiveFolder = receiveFolder
+		}
+	}
+
+	// Ollama section
+	if ollamaSection := cfg.Section("ollama"); ollamaSection != nil {
+		if url := ollamaSection.Key("url").String(); url != "" {
+			config.OllamaURL = url
+		}
+		if model := ollamaSection.Key("model").String(); model != "" {
+			config.OllamaModel = model
 		}
 	}
 

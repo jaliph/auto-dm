@@ -24,3 +24,11 @@ share_folder = ./files
 # Media Download Settings
 # Folder path where received media files will be downloaded
 receive_folder = ./received
+
+[ollama]
+# Ollama AI Integration Settings
+# URL of the Ollama server (e.g., http://localhost:11434)
+url = http://localhost:11434
+
+# Name of the Ollama model to use for AI responses
+model = llama2
