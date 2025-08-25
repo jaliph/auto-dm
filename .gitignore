@@ -49,3 +49,5 @@ config.ini
 build/*
 dist/*
 files/*
+.DS_Store
+auto-dm

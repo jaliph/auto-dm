@@ -48,7 +48,9 @@ func NewHandler(userStoreManager *store.UserStoreManager, gormDB *database.GormD
 
 // HandleRegister handles the /register API endpoint
 func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
+	log.Printf("DEBUG: HandleRegister called with method: %s", r.Method)
 	if r.Method != "POST" {
+		log.Printf("DEBUG: Invalid method for /register: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -66,6 +68,7 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	// Parse JSON request body
 	var request models.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		log.Printf("DEBUG: Failed to parse JSON request body: %v", err)
 		response := models.APIResponse{
 			Status: "error",
 			Error:  "Invalid JSON format",
@@ -74,6 +77,7 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(response)
 		return
 	}
+	log.Printf("DEBUG: Parsed register request for phone: %s", request.Phone)
 
 	// Validate phone number
 	if request.Phone == "" {
@@ -87,10 +91,13 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create QR code session with context
+	log.Printf("DEBUG: Creating QR code session for phone: %s", request.Phone)
 	session, err := h.qrManager.CreateQRCodeSessionWithContext(r.Context(), request.Phone, h.baseURL, h.qrExpiryMinutes)
 	if err != nil {
+		log.Printf("DEBUG: Failed to create QR code session for phone: %s, error: %v", request.Phone, err)
 		// Check if context was cancelled
 		if r.Context().Err() != nil {
+			log.Printf("DEBUG: Request context cancelled for phone: %s", request.Phone)
 			http.Error(w, "Request cancelled", http.StatusRequestTimeout)
 			return
 		}
@@ -142,7 +149,7 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 	// Extract token from URL path
 	// Assuming URL pattern is /qr/{token}
 	path := r.URL.Path
-	log.Printf("DEBUG: Path length: %d", len(path))
+	log.Printf("DEBUG: HandleGetQRCode called with path: %s, length: %d", path, len(path))
 	if len(path) < 5 { // /qr/ is 4 characters
 		log.Printf("DEBUG: Path too short: %s", path)
 		http.Error(w, "Invalid QR code URL", http.StatusBadRequest)
@@ -215,6 +222,7 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate PNG image for QR code
+	log.Printf("DEBUG: Session QRCode length: %d, QRCode: %s", len(session.QRCode), session.QRCode)
 	qrCodePNG, err := h.qrManager.GetQRCodePNGBase64(session.QRCode)
 	if err != nil {
 		log.Printf("DEBUG: Failed to generate PNG for QR code: %v", err)
