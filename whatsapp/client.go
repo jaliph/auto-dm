@@ -124,13 +124,10 @@ func (cm *ClientManager) MonitorConnections() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			cm.checkConnections()
-			// Periodically sync to MSSQL
-			cm.syncToMSSQL()
-		}
+	for range ticker.C {
+		cm.checkConnections()
+		// Periodically sync to MSSQL
+		cm.syncToMSSQL()
 	}
 }
 
