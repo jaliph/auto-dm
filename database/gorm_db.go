@@ -46,7 +46,17 @@ func (gdb *GormDB) migrate() error {
 
 // StoreMessage stores a WhatsApp message in the database
 func (gdb *GormDB) StoreMessage(message *models.Message) error {
-	result := gdb.db.Create(message)
+	// Check if message already exists to prevent duplicates
+	var existingMessage models.Message
+	result := gdb.db.Where("message_id = ?", message.MessageID).First(&existingMessage)
+	if result.Error == nil {
+		// Message already exists, skip insertion
+		log.Printf("DEBUG: Message with ID %s already exists, skipping duplicate", message.MessageID)
+		return nil
+	}
+
+	// Message doesn't exist, proceed with insertion
+	result = gdb.db.Create(message)
 	if result.Error != nil {
 		return fmt.Errorf("failed to store message: %v", result.Error)
 	}

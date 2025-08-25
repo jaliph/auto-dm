@@ -21,25 +21,27 @@ import (
 
 // ClientManager manages WhatsApp clients for senders
 type ClientManager struct {
-	userStoreManager *store.UserStoreManager
-	db               *database.Database
-	gormDB           *database.GormDB
-	messageHandler   *MessageHandler
-	clientToPhone    map[*whatsmeow.Client]string // Maps client to phone number
-	receiveFolder    string                       // Folder to store received media files
-	mu               sync.RWMutex
+	userStoreManager   *store.UserStoreManager
+	db                 *database.Database
+	gormDB             *database.GormDB
+	messageHandler     *MessageHandler
+	clientToPhone      map[*whatsmeow.Client]string // Maps client to phone number
+	handlersRegistered map[*whatsmeow.Client]bool   // Track if handlers are registered for clients
+	receiveFolder      string                       // Folder to store received media files
+	mu                 sync.RWMutex
 }
 
 // NewClientManager creates a new WhatsApp client manager
 func NewClientManager(userStoreManager *store.UserStoreManager, db *database.Database, gormDB *database.GormDB, receiveFolder string, ollamaClient *utils.OllamaClient) *ClientManager {
 	messageHandler := NewMessageHandler(gormDB, receiveFolder, ollamaClient, nil) // Will set clientManager reference after creation
 	clientManager := &ClientManager{
-		userStoreManager: userStoreManager,
-		db:               db,
-		gormDB:           gormDB,
-		messageHandler:   messageHandler,
-		clientToPhone:    make(map[*whatsmeow.Client]string),
-		receiveFolder:    receiveFolder,
+		userStoreManager:   userStoreManager,
+		db:                 db,
+		gormDB:             gormDB,
+		messageHandler:     messageHandler,
+		clientToPhone:      make(map[*whatsmeow.Client]string),
+		handlersRegistered: make(map[*whatsmeow.Client]bool),
+		receiveFolder:      receiveFolder,
 	}
 	// Set the client manager reference in the message handler
 	messageHandler.clientManager = clientManager
@@ -77,8 +79,8 @@ func (cm *ClientManager) LoadAllSenders() error {
 
 			// Check if client is connected
 			if userClient.IsConnected() {
-				// Register message handler for user client with phone number
-				userClient.AddEventHandler(cm.createMessageHandler(sender.Phone))
+				// Register message handler for user client with phone number (safely)
+				cm.registerMessageHandler(userClient, sender.Phone)
 				// Store client to phone mapping
 				cm.mu.Lock()
 				cm.clientToPhone[userClient] = sender.Phone
@@ -98,6 +100,21 @@ func (cm *ClientManager) LoadAllSenders() error {
 
 	log.Printf("Successfully auto-authenticated %d/%d sender clients", successCount, len(senders))
 	return nil
+}
+
+// registerMessageHandler safely registers a message handler for a client if not already registered
+func (cm *ClientManager) registerMessageHandler(client *whatsmeow.Client, phone string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if cm.handlersRegistered[client] {
+		log.Printf("DEBUG: Message handler already registered for client %s", phone)
+		return
+	}
+
+	client.AddEventHandler(cm.createMessageHandler(phone))
+	cm.handlersRegistered[client] = true
+	log.Printf("DEBUG: Message handler registered for client %s", phone)
 }
 
 // createMessageHandler creates a message handler for a specific authenticated sender
@@ -279,6 +296,7 @@ func (cm *ClientManager) removeClientForPhone(phone string) {
 	for client, clientPhone := range cm.clientToPhone {
 		if clientPhone == phone {
 			delete(cm.clientToPhone, client)
+			delete(cm.handlersRegistered, client)
 			log.Printf("Removed client mapping for phone %s", phone)
 			return
 		}
@@ -295,8 +313,8 @@ func (cm *ClientManager) OnAuthenticationSuccess(phone string, client *whatsmeow
 	cm.clientToPhone[client] = phone
 	cm.mu.Unlock()
 
-	// Register message handler for the authenticated client
-	client.AddEventHandler(cm.createMessageHandler(phone))
+	// Register message handler for the authenticated client (safely)
+	cm.registerMessageHandler(client, phone)
 
 	// Update status to authenticated in database
 	log.Printf("DEBUG: OnAuthenticationSuccess - Updating status to authenticated for %s", phone)

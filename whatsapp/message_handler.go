@@ -38,6 +38,9 @@ func NewMessageHandler(gormDB *database.GormDB, receiveFolder string, ollamaClie
 
 // HandleMessageEvent processes a WhatsApp message event
 func (mh *MessageHandler) HandleMessageEvent(evt *events.Message, authenticatedSenderPhone string, client *whatsmeow.Client) error {
+	log.Printf("DEBUG: Processing message event - ID: %s, FromMe: %v, Sender: %s, Chat: %s",
+		evt.Info.ID, evt.Info.IsFromMe, evt.Info.Sender.User, evt.Info.Chat.User)
+
 	// Determine the actual sender and recipient based on the message direction
 	var senderPhone, recipientPhone string
 
@@ -321,9 +324,12 @@ func (mh *MessageHandler) handleAutoReply(senderPhone, recipientPhone, content s
 	log.Printf("DEBUG: Original AI response: %s", aiResponse)
 	log.Printf("DEBUG: Cleaned AI response: %s", cleanedResponse)
 
-	// Send the cleaned AI response back to the sender
+	// Add AI disclaimer to the response
+	responseWithDisclaimer := cleanedResponse + "\n\n_*This response is from an AI Agent*_"
+
+	// Send the cleaned AI response with disclaimer back to the sender
 	if mh.clientManager != nil {
-		if err := mh.clientManager.SendMessage(recipientPhone, senderPhone, cleanedResponse); err != nil {
+		if err := mh.clientManager.SendMessage(recipientPhone, senderPhone, responseWithDisclaimer); err != nil {
 			log.Printf("ERROR: Failed to send AI response: %v", err)
 			return
 		}
