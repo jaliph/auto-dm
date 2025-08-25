@@ -140,8 +140,16 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 	log.Printf("DEBUG: HandleGetQRCode called with path: %s", r.URL.Path)
 
+	// Check if HTML response is requested
+	format := r.URL.Query().Get("format")
+	log.Printf("DEBUG: Format parameter: %s", format)
+
 	if r.Method != "GET" {
 		log.Printf("DEBUG: Invalid method: %s", r.Method)
+		if format == "html" {
+			h.sendHTMLResponse(w, "Method Not Allowed", "Only GET requests are allowed for this endpoint.", "", true)
+			return
+		}
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -152,15 +160,15 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 	log.Printf("DEBUG: HandleGetQRCode called with path: %s, length: %d", path, len(path))
 	if len(path) < 5 { // /qr/ is 4 characters
 		log.Printf("DEBUG: Path too short: %s", path)
+		if format == "html" {
+			h.sendHTMLResponse(w, "Invalid URL", "The QR code URL is invalid. Please check the URL and try again.", "", true)
+			return
+		}
 		http.Error(w, "Invalid QR code URL", http.StatusBadRequest)
 		return
 	}
 	token := path[4:] // Remove /qr/ prefix
 	log.Printf("DEBUG: Extracted token: %s", token)
-
-	// Check if HTML response is requested
-	format := r.URL.Query().Get("format")
-	log.Printf("DEBUG: Format parameter: %s", format)
 
 	// Get QR code session with context
 	log.Printf("DEBUG: Calling qrManager.GetQRCodeWithContext with token: %s", token)
@@ -171,6 +179,10 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 
 		// Check if context was cancelled
 		if r.Context().Err() != nil {
+			if format == "html" {
+				h.sendHTMLResponse(w, "Request Cancelled", "The request was cancelled or timed out. Please try again.", "", true)
+				return
+			}
 			http.Error(w, "Request cancelled", http.StatusRequestTimeout)
 			return
 		}
@@ -178,6 +190,10 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 		// Check if the error is due to expired session
 		if strings.Contains(err.Error(), "QR code session expired") {
 			log.Printf("DEBUG: Detected expired session error")
+			if format == "html" {
+				h.sendHTMLResponse(w, "QR Code Expired", "This QR code has expired. Please register again to get a new QR code.", "", true)
+				return
+			}
 			response := models.QRCodeResponse{
 				Status:  "error",
 				Error:   "QR code session expired",
@@ -192,6 +208,10 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 
 		// Handle other errors (session not found, etc.)
 		log.Printf("DEBUG: Handling other error type")
+		if format == "html" {
+			h.sendHTMLResponse(w, "QR Code Not Found", "The requested QR code was not found. Please check the URL or register again.", "", true)
+			return
+		}
 		response := models.QRCodeResponse{
 			Status:  "error",
 			Error:   fmt.Sprintf("QR code not found: %v", err),
