@@ -20,3 +20,7 @@ connection_check_interval = 1
 # File Sharing Settings
 # Folder path where files to be shared are stored
 share_folder = ./files
+
+# Media Download Settings
+# Folder path where received media files will be downloaded
+receive_folder = ./received

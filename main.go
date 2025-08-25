@@ -24,6 +24,19 @@ func main() {
 	// Load configuration
 	cfg := config.LoadConfig()
 
+	// Create necessary directories
+	if err := os.MkdirAll(cfg.FileShareFolder, 0755); err != nil {
+		log.Printf("Warning: Failed to create file share folder %s: %v", cfg.FileShareFolder, err)
+	} else {
+		log.Printf("File share folder created/verified: %s", cfg.FileShareFolder)
+	}
+
+	if err := os.MkdirAll(cfg.ReceiveFolder, 0755); err != nil {
+		log.Printf("Warning: Failed to create receive folder %s: %v", cfg.ReceiveFolder, err)
+	} else {
+		log.Printf("Receive folder created/verified: %s", cfg.ReceiveFolder)
+	}
+
 	// Create context with cancellation
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -52,7 +65,7 @@ func main() {
 	defer userStoreManager.CloseAll()
 
 	// Initialize WhatsApp client manager (without admin functionality)
-	clientManager := whatsapp.NewClientManager(userStoreManager, db, gormDB)
+	clientManager := whatsapp.NewClientManager(userStoreManager, db, gormDB, cfg.ReceiveFolder)
 
 	// Initialize QR manager
 	qrManager := whatsapp.NewQRManager(db, userStoreManager)

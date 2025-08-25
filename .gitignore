@@ -51,3 +51,5 @@ dist/*
 files/*
 .DS_Store
 auto-dm
+received/*
+received

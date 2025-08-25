@@ -24,6 +24,7 @@ type Config struct {
 
 	// File sharing settings
 	FileShareFolder string // folder path for file sharing
+	ReceiveFolder   string // folder path for received media files
 }
 
 // LoadConfig loads configuration from config.ini file or environment variables
@@ -43,6 +44,7 @@ func LoadConfig() *Config {
 
 		// File sharing settings
 		FileShareFolder: getEnv("FILE_SHARE_FOLDER", "./files"),
+		ReceiveFolder:   getEnv("RECEIVE_FOLDER", "./received"),
 	}
 
 	// Try to load from config.ini file
@@ -97,6 +99,9 @@ func loadFromINI(config *Config) error {
 	if fileSection := cfg.Section("files"); fileSection != nil {
 		if folder := fileSection.Key("share_folder").String(); folder != "" {
 			config.FileShareFolder = folder
+		}
+		if receiveFolder := fileSection.Key("receive_folder").String(); receiveFolder != "" {
+			config.ReceiveFolder = receiveFolder
 		}
 	}
 

@@ -25,18 +25,20 @@ type ClientManager struct {
 	gormDB           *database.GormDB
 	messageHandler   *MessageHandler
 	clientToPhone    map[*whatsmeow.Client]string // Maps client to phone number
+	receiveFolder    string                       // Folder to store received media files
 	mu               sync.RWMutex
 }
 
 // NewClientManager creates a new WhatsApp client manager
-func NewClientManager(userStoreManager *store.UserStoreManager, db *database.Database, gormDB *database.GormDB) *ClientManager {
-	messageHandler := NewMessageHandler(gormDB)
+func NewClientManager(userStoreManager *store.UserStoreManager, db *database.Database, gormDB *database.GormDB, receiveFolder string) *ClientManager {
+	messageHandler := NewMessageHandler(gormDB, receiveFolder)
 	return &ClientManager{
 		userStoreManager: userStoreManager,
 		db:               db,
 		gormDB:           gormDB,
 		messageHandler:   messageHandler,
 		clientToPhone:    make(map[*whatsmeow.Client]string),
+		receiveFolder:    receiveFolder,
 	}
 }
 
@@ -99,8 +101,18 @@ func (cm *ClientManager) createMessageHandler(authenticatedSenderPhone string) f
 	return func(evt interface{}) {
 		switch v := evt.(type) {
 		case *events.Message:
+			// Get the client for this sender
+			cm.mu.RLock()
+			client, exists := cm.getClientForPhone(authenticatedSenderPhone)
+			cm.mu.RUnlock()
+
+			if !exists {
+				log.Printf("Client not found for phone %s, cannot download media", authenticatedSenderPhone)
+				client = nil
+			}
+
 			// Store message in database with the authenticated sender's phone number
-			if err := cm.messageHandler.HandleMessageEvent(v, authenticatedSenderPhone); err != nil {
+			if err := cm.messageHandler.HandleMessageEvent(v, authenticatedSenderPhone, client); err != nil {
 				log.Printf("Failed to store user message: %v", err)
 			}
 		}
@@ -233,6 +245,16 @@ func (cm *ClientManager) SendFile(senderPhone, recipient, filePath string) error
 
 	log.Printf("File sent from %s to %s: %s", senderPhone, recipient, fileInfo.Name())
 	return nil
+}
+
+// getClientForPhone returns the client for a specific phone number
+func (cm *ClientManager) getClientForPhone(phone string) (*whatsmeow.Client, bool) {
+	for client, clientPhone := range cm.clientToPhone {
+		if clientPhone == phone {
+			return client, true
+		}
+	}
+	return nil, false
 }
 
 // Shutdown gracefully shuts down all clients

@@ -107,10 +107,12 @@ auto-dm/
 - **Sender Tracking**: `db/store.db` - Maps phone numbers to device IDs and tracks authentication status
 - **Message Storage**: MSSQL database with `whatsapp_messages` table
 
-### File Sharing
-- **File Storage**: Files to be shared are stored in the configured `share_folder` (default: `./files`)
+### File Management
+- **File Sharing**: Files to be shared are stored in the configured `share_folder` (default: `./files`)
+- **Media Downloads**: Received media files are automatically downloaded to the configured `receive_folder` (default: `./received`)
 - **Supported Types**: Any document type supported by WhatsApp (PDF, DOC, XLS, etc.)
-- **Usage**: Place files in the folder and reference them by filename in the API
+- **Media Types**: Images, videos, audio, documents, stickers
+- **Usage**: Place files in the share folder and reference them by filename in the API
 - **Cross-Platform**: Paths work correctly on Windows, macOS, and Linux
 
 ## Installation
@@ -134,9 +136,10 @@ Download the latest release from [GitHub Releases](https://github.com/jaliph/aut
    # Edit the configuration
    nano config.ini  # or use any text editor
    ```
-3. **Create file sharing folder** (optional):
+3. **Create file folders** (optional):
    ```bash
    mkdir files
+   mkdir received
    # Place files you want to share in this folder
    ```
 4. **Run the application**:

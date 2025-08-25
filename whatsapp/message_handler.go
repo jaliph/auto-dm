@@ -1,10 +1,14 @@
 package whatsapp
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types/events"
 
@@ -14,18 +18,20 @@ import (
 
 // MessageHandler handles WhatsApp message events and stores them in the database
 type MessageHandler struct {
-	gormDB *database.GormDB
+	gormDB        *database.GormDB
+	receiveFolder string // Folder to store received media files
 }
 
 // NewMessageHandler creates a new message handler
-func NewMessageHandler(gormDB *database.GormDB) *MessageHandler {
+func NewMessageHandler(gormDB *database.GormDB, receiveFolder string) *MessageHandler {
 	return &MessageHandler{
-		gormDB: gormDB,
+		gormDB:        gormDB,
+		receiveFolder: receiveFolder,
 	}
 }
 
 // HandleMessageEvent processes a WhatsApp message event
-func (mh *MessageHandler) HandleMessageEvent(evt *events.Message, authenticatedSenderPhone string) error {
+func (mh *MessageHandler) HandleMessageEvent(evt *events.Message, authenticatedSenderPhone string, client *whatsmeow.Client) error {
 	// Determine the actual sender and recipient based on the message direction
 	var senderPhone, recipientPhone string
 
@@ -39,13 +45,24 @@ func (mh *MessageHandler) HandleMessageEvent(evt *events.Message, authenticatedS
 		recipientPhone = authenticatedSenderPhone
 	}
 
+	// Get message type and content
+	messageType := mh.getMessageType(evt.Message)
+	content := mh.getMessageContent(evt.Message)
+
+	// Download media file if present and store local path
+	var localFilePath string
+	if !evt.Info.IsFromMe && mh.hasMedia(evt.Message) {
+		// Only download media for received messages (not sent by us)
+		localFilePath = mh.downloadMediaFile(evt.Message, evt.Info.ID, messageType, client)
+	}
+
 	// Create message model
 	message := &models.Message{
 		SenderPhone:    senderPhone,
 		RecipientPhone: recipientPhone,
-		MessageType:    mh.getMessageType(evt.Message),
-		Content:        mh.getMessageContent(evt.Message),
-		MediaURL:       mh.getMediaURL(evt.Message),
+		MessageType:    messageType,
+		Content:        content,
+		MediaURL:       localFilePath, // Store local file path instead of URL
 		Timestamp:      time.Unix(evt.Info.Timestamp.Unix(), 0),
 		IsFromMe:       evt.Info.IsFromMe,
 		ChatID:         evt.Info.Chat.String(),
@@ -57,8 +74,8 @@ func (mh *MessageHandler) HandleMessageEvent(evt *events.Message, authenticatedS
 		return fmt.Errorf("failed to store message: %v", err)
 	}
 
-	log.Printf("Stored message from %s to %s: %s (IsFromMe: %v)",
-		message.SenderPhone, message.RecipientPhone, message.Content, evt.Info.IsFromMe)
+	log.Printf("Stored message from %s to %s: %s (IsFromMe: %v, Media: %s)",
+		message.SenderPhone, message.RecipientPhone, message.Content, evt.Info.IsFromMe, localFilePath)
 
 	return nil
 }
@@ -118,4 +135,83 @@ func (mh *MessageHandler) getMediaURL(msg *waE2E.Message) string {
 		return *msg.DocumentMessage.URL
 	}
 	return ""
+}
+
+// hasMedia checks if a message contains media
+func (mh *MessageHandler) hasMedia(msg *waE2E.Message) bool {
+	return msg.ImageMessage != nil || msg.VideoMessage != nil || msg.AudioMessage != nil ||
+		msg.DocumentMessage != nil || msg.StickerMessage != nil
+}
+
+// downloadMediaFile downloads a media file using WhatsApp client and saves it to the receive folder
+func (mh *MessageHandler) downloadMediaFile(msg *waE2E.Message, messageID, messageType string, client *whatsmeow.Client) string {
+	// Generate filename based on message ID and type
+	extension := mh.getFileExtension(messageType)
+	filename := fmt.Sprintf("%s_%s%s", messageID, messageType, extension)
+	filePath := filepath.Join(mh.receiveFolder, filename)
+
+	// Create the file
+	file, err := os.Create(filePath)
+	if err != nil {
+		log.Printf("Failed to create file %s: %v", filePath, err)
+		return ""
+	}
+	defer file.Close()
+
+	// Download the media using WhatsApp client based on message type
+	ctx := context.Background()
+
+	switch messageType {
+	case "image":
+		if msg.ImageMessage != nil {
+			err = client.DownloadToFile(ctx, msg.ImageMessage, file)
+		}
+	case "video":
+		if msg.VideoMessage != nil {
+			err = client.DownloadToFile(ctx, msg.VideoMessage, file)
+		}
+	case "audio":
+		if msg.AudioMessage != nil {
+			err = client.DownloadToFile(ctx, msg.AudioMessage, file)
+		}
+	case "document":
+		if msg.DocumentMessage != nil {
+			err = client.DownloadToFile(ctx, msg.DocumentMessage, file)
+		}
+	case "sticker":
+		if msg.StickerMessage != nil {
+			err = client.DownloadToFile(ctx, msg.StickerMessage, file)
+		}
+	default:
+		log.Printf("Unsupported media type: %s", messageType)
+		return ""
+	}
+
+	if err != nil {
+		log.Printf("Failed to download media file %s: %v", filePath, err)
+		// Clean up the file if download failed
+		os.Remove(filePath)
+		return ""
+	}
+
+	log.Printf("Downloaded media file: %s", filePath)
+	return filePath
+}
+
+// getFileExtension returns the appropriate file extension based on message type
+func (mh *MessageHandler) getFileExtension(messageType string) string {
+	switch messageType {
+	case "image":
+		return ".jpg"
+	case "video":
+		return ".mp4"
+	case "audio":
+		return ".ogg"
+	case "document":
+		return ".pdf"
+	case "sticker":
+		return ".webp"
+	default:
+		return ".bin"
+	}
 }
