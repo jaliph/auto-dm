@@ -76,7 +76,7 @@ auto-dm/
 
 - **Get QR Code**: `GET /qr/{token}` - Get QR code for authentication
 - **Get Senders**: `GET /senders` - Get all registered senders with their status
-- **Delete Sender**: `DELETE /senders/{phone}` - Delete a registered sender
+- **Delete Sender**: `DELETE /senders/{phone}` - Delete a registered sender (logs out from WhatsApp, unlinks device, and cleans up all data)
 - **Send Message**: `POST /send` with JSON body:
   ```json
   {

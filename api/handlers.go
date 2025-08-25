@@ -287,9 +287,11 @@ func (h *Handler) HandleGetSenders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use MSSQL database for sender reports and consumption
-	senders, err := h.gormDB.GetAllSenders()
+	// Use SQLite database for sender reports to get immediate status updates
+	log.Printf("DEBUG: HandleGetSenders - Getting senders from SQLite database")
+	senders, err := h.db.GetAllSenders()
 	if err != nil {
+		log.Printf("DEBUG: HandleGetSenders - Failed to get senders: %v", err)
 		response := models.APIResponse{
 			Status: "error",
 			Error:  fmt.Sprintf("Failed to get senders: %v", err),
@@ -300,6 +302,18 @@ func (h *Handler) HandleGetSenders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("DEBUG: HandleGetSenders - Got %d senders from database", len(senders))
+	for _, sender := range senders {
+		log.Printf("DEBUG: HandleGetSenders - Sender: %s, Status: %s, DeviceID: %s", sender.Phone, sender.Status, sender.DeviceID)
+	}
+
+	// Ensure we always return an array, even if empty
+	if senders == nil {
+		log.Printf("DEBUG: HandleGetSenders - senders is nil, converting to empty slice")
+		senders = []*models.Sender{}
+	}
+
+	log.Printf("DEBUG: HandleGetSenders - About to encode %d senders", len(senders))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(senders)
 }
@@ -344,8 +358,14 @@ func (h *Handler) HandleDeleteSender(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Disconnect the sender if they're connected
-	h.userStoreManager.DisconnectUser(phone)
+	// Logout and cleanup the sender's WhatsApp session
+	if err := h.userStoreManager.LogoutUser(phone); err != nil {
+		log.Printf("Warning: Failed to logout user %s: %v", phone, err)
+		// Continue with deletion even if logout fails
+	}
+
+	// Remove from client manager
+	h.clientManager.DeleteUser(phone)
 
 	// Delete sender from SQLite database
 	if err := h.db.DeleteSender(phone); err != nil {

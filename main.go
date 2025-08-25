@@ -67,8 +67,8 @@ func main() {
 	// Initialize WhatsApp client manager (without admin functionality)
 	clientManager := whatsapp.NewClientManager(userStoreManager, db, gormDB, cfg.ReceiveFolder)
 
-	// Initialize QR manager
-	qrManager := whatsapp.NewQRManager(db, userStoreManager)
+	// Initialize QR manager with authentication callback
+	qrManager := whatsapp.NewQRManager(db, userStoreManager, clientManager)
 	qrManager.StartCleanup()
 
 	// Load and authenticate existing senders

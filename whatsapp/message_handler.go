@@ -85,6 +85,9 @@ func (mh *MessageHandler) getMessageType(msg *waE2E.Message) string {
 	if msg.Conversation != nil {
 		return "text"
 	}
+	if msg.ExtendedTextMessage != nil {
+		return "text"
+	}
 	if msg.ImageMessage != nil {
 		return "image"
 	}

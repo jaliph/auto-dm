@@ -150,9 +150,22 @@ func (cm *ClientManager) checkConnections() {
 }
 
 // syncToMSSQL periodically syncs all senders from SQLite to MSSQL
+// This is a more conservative sync that doesn't overwrite authenticated status
 func (cm *ClientManager) syncToMSSQL() {
-	if err := cm.gormDB.ForceSyncAllSenders(cm.db); err != nil {
-		log.Printf("Warning: Failed to sync senders to MSSQL: %v", err)
+	// Only sync senders that are not authenticated to avoid overwriting authenticated status
+	senders, err := cm.db.GetAllSenders()
+	if err != nil {
+		log.Printf("Warning: Failed to get senders for sync: %v", err)
+		return
+	}
+
+	for _, sender := range senders {
+		// Only sync non-authenticated senders to avoid race conditions
+		if sender.Status != "authenticated" {
+			if err := cm.gormDB.SyncSenderToMSSQL(sender); err != nil {
+				log.Printf("Warning: Failed to sync sender %s to MSSQL: %v", sender.Phone, err)
+			}
+		}
 	}
 }
 
@@ -255,6 +268,64 @@ func (cm *ClientManager) getClientForPhone(phone string) (*whatsmeow.Client, boo
 		}
 	}
 	return nil, false
+}
+
+// removeClientForPhone removes a client from the clientToPhone map
+func (cm *ClientManager) removeClientForPhone(phone string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	for client, clientPhone := range cm.clientToPhone {
+		if clientPhone == phone {
+			delete(cm.clientToPhone, client)
+			log.Printf("Removed client mapping for phone %s", phone)
+			return
+		}
+	}
+}
+
+// OnAuthenticationSuccess is called when a user successfully authenticates via QR code
+func (cm *ClientManager) OnAuthenticationSuccess(phone string, client *whatsmeow.Client) {
+	log.Printf("DEBUG: OnAuthenticationSuccess called for %s", phone)
+	log.Printf("Authentication success callback for %s", phone)
+
+	// Add the authenticated client to the client manager
+	cm.mu.Lock()
+	cm.clientToPhone[client] = phone
+	cm.mu.Unlock()
+
+	// Register message handler for the authenticated client
+	client.AddEventHandler(cm.createMessageHandler(phone))
+
+	// Update status to authenticated in database
+	log.Printf("DEBUG: OnAuthenticationSuccess - Updating status to authenticated for %s", phone)
+	cm.db.UpdateSenderStatus(phone, "authenticated")
+
+	// Immediately sync this specific sender to MSSQL to avoid race conditions
+	log.Printf("DEBUG: OnAuthenticationSuccess - Getting sender from database for %s", phone)
+	if sender, err := cm.db.GetSender(phone); err == nil {
+		log.Printf("DEBUG: OnAuthenticationSuccess - Got sender from database: %s, status: %s", phone, sender.Status)
+		if err := cm.gormDB.SyncSenderToMSSQL(sender); err != nil {
+			log.Printf("Warning: Failed to sync authenticated sender %s to MSSQL: %v", phone, err)
+		} else {
+			log.Printf("Successfully synced authenticated sender %s to MSSQL", phone)
+		}
+	} else {
+		log.Printf("DEBUG: OnAuthenticationSuccess - Failed to get sender from database for %s: %v", phone, err)
+	}
+
+	log.Printf("✅ Successfully integrated authenticated client for %s", phone)
+}
+
+// DeleteUser handles the complete deletion of a user from the client manager
+func (cm *ClientManager) DeleteUser(phone string) {
+	log.Printf("DEBUG: DeleteUser called for phone: %s", phone)
+
+	// Remove from client mapping
+	cm.removeClientForPhone(phone)
+
+	// The actual logout and cleanup is handled by UserStoreManager.LogoutUser()
+	log.Printf("Removed user %s from client manager", phone)
 }
 
 // Shutdown gracefully shuts down all clients

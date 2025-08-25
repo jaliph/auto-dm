@@ -32,6 +32,7 @@ type QRManager struct {
 	mu               sync.RWMutex
 	db               Database
 	userStoreManager UserStoreManager
+	authCallback     AuthenticationCallback // Callback for authentication success
 }
 
 // Database interface for QR manager
@@ -46,19 +47,27 @@ type Database interface {
 // UserStoreManager interface for QR manager
 type UserStoreManager interface {
 	CreateUserStore(phone string) (*whatsmeow.Client, error)
+	CreateFreshUserStore(phone string) (*whatsmeow.Client, error)
 	LoadUserStore(phone, deviceID string) (*whatsmeow.Client, error)
 	GetUserClient(phone string) (*whatsmeow.Client, bool)
+	StoreAuthenticatedClient(phone string, client *whatsmeow.Client)
 	DisconnectUser(phone string)
 	GetAllUserClients() map[string]*whatsmeow.Client
 	CloseAll()
 }
 
+// AuthenticationCallback interface for notifying when authentication succeeds
+type AuthenticationCallback interface {
+	OnAuthenticationSuccess(phone string, client *whatsmeow.Client)
+}
+
 // NewQRManager creates a new QR code manager
-func NewQRManager(db Database, userStoreManager UserStoreManager) *QRManager {
+func NewQRManager(db Database, userStoreManager UserStoreManager, authCallback AuthenticationCallback) *QRManager {
 	return &QRManager{
 		sessions:         make(map[string]*QRCodeSession),
 		db:               db,
 		userStoreManager: userStoreManager,
+		authCallback:     authCallback,
 	}
 }
 
@@ -103,6 +112,14 @@ func (qm *QRManager) CreateQRCodeSessionWithContext(ctx context.Context, phone s
 			return nil, fmt.Errorf("failed to get sender status: %v", err)
 		}
 
+		log.Printf("Sender %s exists with status: %s", phone, sender.Status)
+
+		// Check if user is already authenticated
+		if sender.Status == "authenticated" {
+			log.Printf("User %s is already authenticated, cannot create QR session", phone)
+			return nil, fmt.Errorf("user %s is already authenticated", phone)
+		}
+
 		log.Printf("Sender %s exists with status: %s - updating to pending", phone, sender.Status)
 
 		// Update status to pending for fresh authentication
@@ -132,14 +149,14 @@ func (qm *QRManager) CreateQRCodeSessionWithContext(ctx context.Context, phone s
 	}
 	log.Printf("DEBUG: Generated token for phone: %s, token: %s", phone, token)
 
-	// Create WhatsApp client
-	log.Printf("DEBUG: Creating WhatsApp client for phone: %s", phone)
-	client, err := qm.userStoreManager.CreateUserStore(phone)
+	// Create fresh WhatsApp client for QR generation
+	log.Printf("DEBUG: Creating fresh WhatsApp client for QR generation for phone: %s", phone)
+	client, err := qm.userStoreManager.CreateFreshUserStore(phone)
 	if err != nil {
-		log.Printf("DEBUG: Failed to create WhatsApp client for phone: %s, error: %v", phone, err)
-		return nil, fmt.Errorf("failed to create WhatsApp client: %v", err)
+		log.Printf("DEBUG: Failed to create fresh WhatsApp client for phone: %s, error: %v", phone, err)
+		return nil, fmt.Errorf("failed to create fresh WhatsApp client: %v", err)
 	}
-	log.Printf("DEBUG: WhatsApp client created successfully for phone: %s", phone)
+	log.Printf("DEBUG: Fresh WhatsApp client created successfully for phone: %s", phone)
 
 	// Create session
 	session := &QRCodeSession{
@@ -181,6 +198,10 @@ func (qm *QRManager) generateQRCodeWithContext(ctx context.Context, session *QRC
 		log.Printf("DEBUG: Failed to get QR channel for phone: %s, error: %v", session.Phone, err)
 		log.Printf("Failed to get QR channel for %s: %v", session.Phone, err)
 		qm.updateSessionStatus(session, "expired")
+		// Mark session as failed for QR generation
+		session.mu.Lock()
+		session.Status = "expired"
+		session.mu.Unlock()
 		return
 	}
 	log.Printf("DEBUG: QR channel obtained successfully for phone: %s", session.Phone)
@@ -191,6 +212,10 @@ func (qm *QRManager) generateQRCodeWithContext(ctx context.Context, session *QRC
 		log.Printf("DEBUG: Failed to connect client for phone: %s, error: %v", session.Phone, err)
 		log.Printf("Failed to connect client for %s: %v", session.Phone, err)
 		qm.updateSessionStatus(session, "expired")
+		// Mark session as failed for connection
+		session.mu.Lock()
+		session.Status = "expired"
+		session.mu.Unlock()
 		return
 	}
 	log.Printf("DEBUG: WhatsApp client connected successfully for phone: %s", session.Phone)
@@ -216,6 +241,7 @@ func (qm *QRManager) generateQRCodeWithContext(ctx context.Context, session *QRC
 				session.QRCode = evt.Code
 				session.Status = "pending"
 				log.Printf("QR code generated for %s, code length: %d", session.Phone, len(evt.Code))
+				// Don't return here - continue listening for QR code updates
 
 			case "timeout":
 				session.Status = "expired"
@@ -230,10 +256,32 @@ func (qm *QRManager) generateQRCodeWithContext(ctx context.Context, session *QRC
 
 				// Update database
 				if session.Client.Store.ID != nil {
+					log.Printf("DEBUG: Updating device ID for %s: %s", session.Phone, session.Client.Store.ID.String())
 					qm.db.UpdateSenderDeviceID(session.Phone, session.Client.Store.ID.String())
 				}
-				qm.updateSessionStatus(session, "authenticated")
+
+				// Unlock the mutex before calling updateSessionStatus to avoid deadlock
 				session.mu.Unlock()
+
+				log.Printf("DEBUG: Calling updateSessionStatus for %s with status: authenticated", session.Phone)
+				qm.updateSessionStatus(session, "authenticated")
+
+				// Store the authenticated client in the user store manager
+				// This ensures the client is available for future use
+				log.Printf("DEBUG: Storing authenticated client for %s", session.Phone)
+				qm.userStoreManager.StoreAuthenticatedClient(session.Phone, session.Client)
+
+				// Notify the authentication callback (client manager) about the new authenticated client
+				log.Printf("DEBUG: About to call authentication callback for %s", session.Phone)
+				log.Printf("DEBUG: authCallback type: %T", qm.authCallback)
+				if qm.authCallback != nil {
+					log.Printf("DEBUG: Authentication callback is not nil, calling OnAuthenticationSuccess")
+					qm.authCallback.OnAuthenticationSuccess(session.Phone, session.Client)
+					log.Printf("DEBUG: Authentication callback completed for %s", session.Phone)
+				} else {
+					log.Printf("DEBUG: Authentication callback is nil for %s", session.Phone)
+				}
+
 				return
 			default:
 				log.Printf("Unknown event for %s: %s", session.Phone, evt.Event)
@@ -265,9 +313,18 @@ func (qm *QRManager) updateSessionStatus(session *QRCodeSession, status string) 
 	session.mu.Unlock()
 
 	// Update database
+	log.Printf("DEBUG: Calling UpdateSenderStatus for phone: %s with status: %s", session.Phone, status)
 	if err := qm.db.UpdateSenderStatus(session.Phone, status); err != nil {
 		log.Printf("DEBUG: Failed to update sender status in database for phone: %s, error: %v", session.Phone, err)
 		log.Printf("Failed to update sender status for %s: %v", session.Phone, err)
+	} else {
+		log.Printf("DEBUG: Successfully updated sender status in database for phone: %s to: %s", session.Phone, status)
+		// Verify the update by reading back the status
+		if sender, err := qm.db.GetSender(session.Phone); err == nil {
+			log.Printf("DEBUG: Verification - Sender %s status in database: %s", session.Phone, sender.Status)
+		} else {
+			log.Printf("DEBUG: Verification - Failed to get sender %s from database: %v", session.Phone, err)
+		}
 	}
 }
 
@@ -298,6 +355,12 @@ func (qm *QRManager) GetQRCodeWithContext(ctx context.Context, token string) (*Q
 	if session.Status == "expired" {
 		log.Printf("DEBUG: Session already expired by status for token: %s", token)
 		return nil, fmt.Errorf("QR code session expired")
+	}
+
+	// Check if session is already authenticated
+	if session.Status == "authenticated" {
+		log.Printf("DEBUG: Session already authenticated for token: %s", token)
+		return session, nil
 	}
 
 	// Check if session is expired by time
