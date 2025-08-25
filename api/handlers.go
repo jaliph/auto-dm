@@ -221,6 +221,25 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if QR code is empty (QR generation failed)
+	if session.QRCode == "" {
+		log.Printf("DEBUG: QR code is empty for session, QR generation failed")
+		if format == "html" {
+			h.sendHTMLResponse(w, "QR Code Generation Failed", "QR code generation failed. Please try registering again.", "", true)
+			return
+		}
+		// Return error response for QR generation failure
+		response := models.QRCodeResponse{
+			Status:  "error",
+			Error:   "QR code generation failed",
+			Expired: false,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
 	// Generate PNG image for QR code
 	log.Printf("DEBUG: Session QRCode length: %d, QRCode: %s", len(session.QRCode), session.QRCode)
 	qrCodePNG, err := h.qrManager.GetQRCodePNGBase64(session.QRCode)
@@ -230,14 +249,14 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 			h.sendHTMLResponse(w, "QR Code Error", "Failed to generate QR code image. Please try again.", "", true)
 			return
 		}
-		// Fallback to text QR code
+		// Return error for PNG generation failure
 		response := models.QRCodeResponse{
-			Status:  "success",
-			QRCode:  session.QRCode,
+			Status:  "error",
+			Error:   "Failed to generate QR code image",
 			Expired: false,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(response)
 		return
 	}

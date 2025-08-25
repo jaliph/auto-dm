@@ -294,11 +294,17 @@ func (qm *QRManager) GetQRCodeWithContext(ctx context.Context, token string) (*Q
 
 	log.Printf("DEBUG: Session found for token: %s, phone: %s, status: %s", token, session.Phone, session.Status)
 
-	// Check if session is expired
+	// Check if session is already expired by status
+	if session.Status == "expired" {
+		log.Printf("DEBUG: Session already expired by status for token: %s", token)
+		return nil, fmt.Errorf("QR code session expired")
+	}
+
+	// Check if session is expired by time
 	now := time.Now()
 	log.Printf("DEBUG: Checking session expiry for token: %s, current time: %v, expires at: %v", token, now, session.ExpiresAt)
 	if now.After(session.ExpiresAt) {
-		log.Printf("DEBUG: Session expired for token: %s", token)
+		log.Printf("DEBUG: Session expired by time for token: %s", token)
 		session.Status = "expired"
 		qm.updateSessionStatus(session, "expired")
 		return nil, fmt.Errorf("QR code session expired")
