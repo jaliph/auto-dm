@@ -115,6 +115,15 @@ auto-dm/
 - **Usage**: Place files in the share folder and reference them by filename in the API
 - **Cross-Platform**: Paths work correctly on Windows, macOS, and Linux
 
+### AI Auto-Reply with Ollama
+- **Automatic Responses**: Automatically replies to received text messages using AI
+- **Ollama Integration**: Uses local Ollama server for AI responses
+- **Conditional Activation**: Only enabled when both Ollama URL and model are configured
+- **Connection Resilience**: Automatically disables feature if Ollama server is unavailable
+- **Response Cleaning**: Automatically removes internal AI thinking patterns from responses
+- **Text-Only**: Only responds to text messages, not media files
+- **Real-time**: Processes messages as they are received
+
 ## Installation
 
 ### Option 1: Download Pre-built Binary (Recommended)
@@ -435,6 +444,11 @@ export MSSQL_USERNAME="sa"
 export MSSQL_PASSWORD="YourPassword123!"
 export API_PORT=":8080"
 export FILE_SHARE_FOLDER="./files"
+export RECEIVE_FOLDER="./received"
+
+# Optional: Ollama AI integration
+export OLLAMA_URL="http://localhost:11434"
+export OLLAMA_MODEL="llama2"
 ```
 
 #### **2. config.ini File** (Recommended for development):
@@ -453,6 +467,12 @@ connection_check_interval = 1
 
 [files]
 share_folder = ./files
+receive_folder = ./received
+
+[ollama]
+# Optional: AI auto-reply feature
+url = http://localhost:11434
+model = llama2
 ```
 
 #### **3. Default Values** (fallback):
@@ -467,6 +487,127 @@ share_folder = ./files
 1. **`config.ini`** (highest priority)
 2. **Environment variables** (fallback)
 3. **Default values** (lowest priority)
+
+## Ollama AI Integration
+
+### Overview
+The WhatsApp automation app includes optional AI auto-reply functionality using Ollama. When configured, the app will automatically respond to received text messages using a local AI model.
+
+### Setup
+
+#### 1. Install Ollama
+First, install Ollama on your system:
+```bash
+# macOS/Linux
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Windows
+# Download from https://ollama.ai/download
+```
+
+#### 2. Pull a Model
+Download an AI model to use:
+```bash
+# Popular models
+ollama pull llama2
+ollama pull qwen2.5:7b
+ollama pull mistral:7b
+ollama pull codellama:7b
+```
+
+#### 3. Configure the App
+Add Ollama configuration to your `config.ini`:
+```ini
+[ollama]
+# Ollama server URL (default: http://localhost:11434)
+url = http://localhost:11434
+
+# AI model name (must match the model you pulled)
+model = llama2
+```
+
+Or use environment variables:
+```bash
+export OLLAMA_URL="http://localhost:11434"
+export OLLAMA_MODEL="llama2"
+```
+
+#### 4. Start Ollama Server
+```bash
+# Start Ollama server
+ollama serve
+
+# In another terminal, test the model
+ollama run llama2 "Hello, how are you?"
+```
+
+### How It Works
+
+1. **Message Reception**: When a text message is received by any authenticated sender
+2. **AI Processing**: The message is sent to the configured Ollama model
+3. **Response Generation**: Ollama generates an AI response
+4. **Response Cleaning**: Internal thinking patterns are automatically removed
+5. **Auto-Reply**: The cleaned response is automatically sent back to the original sender
+
+### Features
+
+#### **Conditional Activation**
+- Only activates when both `OLLAMA_URL` and `OLLAMA_MODEL` are configured
+- Automatically disables if Ollama server is unavailable
+- Graceful fallback - doesn't affect other WhatsApp functionality
+
+#### **Response Cleaning**
+Automatically removes common AI thinking patterns:
+- `<think>...</think>` blocks
+- `<thinking>...</thinking>` blocks
+- `<reasoning>...</reasoning>` blocks
+- `<internal>...</internal>` blocks
+- `<process>...</process>` blocks
+
+#### **Logging**
+The app provides comprehensive logging for the AI feature:
+```
+✅ Ollama connection successful, auto-reply feature enabled
+DEBUG: Generating AI response for message from 919148155203: Hi
+DEBUG: Original AI response: <think>This is a greeting...</think>Hello! How can I help you?
+DEBUG: Cleaned AI response: Hello! How can I help you?
+✅ Auto-reply sent from 918088584128 to 919148155203: Hello! How can I help you?
+```
+
+### Troubleshooting
+
+#### **Feature Not Working**
+1. **Check Configuration**: Ensure both `url` and `model` are set in config
+2. **Verify Ollama Server**: Make sure `ollama serve` is running
+3. **Test Model**: Try `ollama run <model> "test"` to verify the model works
+4. **Check Logs**: Look for Ollama-related log messages in the app output
+
+#### **Connection Issues**
+```
+WARNING: Ollama connection failed, auto-reply feature will be disabled
+```
+- Verify Ollama server is running on the configured URL
+- Check if the model name matches exactly
+- Ensure network connectivity to the Ollama server
+
+#### **Response Quality Issues**
+- Try different models for better responses
+- Some models may require specific prompts or system messages
+- Consider using larger models for better quality (e.g., `llama2:70b` vs `llama2:7b`)
+
+### Supported Models
+Any model available in Ollama can be used:
+- **Llama 2**: `llama2`, `llama2:7b`, `llama2:13b`, `llama2:70b`
+- **Qwen**: `qwen2.5:7b`, `qwen2.5:14b`, `qwen2.5:32b`
+- **Mistral**: `mistral:7b`, `mistral:7b-instruct`
+- **Code Llama**: `codellama:7b`, `codellama:13b`
+- **Custom Models**: Any model you've created or pulled
+
+### Security Considerations
+- **Local Processing**: All AI processing happens locally on your Ollama server
+- **No External APIs**: No data is sent to external AI services
+- **Privacy**: Messages are only processed by your local AI model
+- **Network**: Ensure Ollama server is properly secured if exposed to network
 
 ## Dependencies
 
