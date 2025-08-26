@@ -370,6 +370,25 @@ func findSubstring(s, substr string, start int) int {
 
 // handleAutoReply processes auto-replies using Ollama for received text messages
 func (mh *MessageHandler) handleAutoReply(senderPhone, recipientPhone, content string) {
+	// Check if auto-reply is enabled for this chat participant
+	if mh.gormDB != nil {
+		participant, err := mh.gormDB.GetChatParticipant(senderPhone)
+		if err != nil {
+			// If participant doesn't exist, create them with auto-reply enabled by default
+			log.Printf("DEBUG: Chat participant %s not found, creating with auto-reply enabled", senderPhone)
+			if err := mh.gormDB.CreateChatParticipant(senderPhone, "", true); err != nil {
+				log.Printf("ERROR: Failed to create chat participant %s: %v", senderPhone, err)
+				return
+			}
+		} else {
+			// Check if auto-reply is disabled for this participant
+			if !participant.AutoReplyEnabled {
+				log.Printf("DEBUG: Auto-reply disabled for chat participant %s, skipping", senderPhone)
+				return
+			}
+		}
+	}
+
 	// Check if Ollama is configured and working
 	if mh.ollamaClient == nil || !mh.ollamaClient.IsConfigured() {
 		log.Printf("DEBUG: Ollama not configured, skipping auto-reply")

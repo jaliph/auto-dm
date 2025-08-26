@@ -53,3 +53,36 @@ type QRCodeResponse struct {
 	Error     string `json:"error,omitempty"`
 	Expired   bool   `json:"expired"`
 }
+
+// ChatParticipant represents a chat participant with auto-reply settings
+type ChatParticipant struct {
+	ID               uint      `gorm:"primaryKey;autoIncrement" json:"id"`
+	Phone            string    `gorm:"size:20;not null;uniqueIndex" json:"phone"`
+	Name             string    `gorm:"size:100" json:"name,omitempty"`
+	AutoReplyEnabled bool      `gorm:"not null;default:true" json:"auto_reply_enabled"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+// ChatParticipantRequest represents a request to create or update a chat participant
+type ChatParticipantRequest struct {
+	Phone            string `json:"phone"`
+	Name             string `json:"name,omitempty"`
+	AutoReplyEnabled *bool  `json:"auto_reply_enabled,omitempty"`
+}
+
+// ChatParticipantResponse represents a response for chat participant operations
+type ChatParticipantResponse struct {
+	Status  string           `json:"status"`
+	Message string           `json:"message"`
+	Data    *ChatParticipant `json:"data,omitempty"`
+	Error   string           `json:"error,omitempty"`
+}
+
+// ChatParticipantsResponse represents a response for multiple chat participants
+type ChatParticipantsResponse struct {
+	Status  string            `json:"status"`
+	Message string            `json:"message"`
+	Data    []ChatParticipant `json:"data,omitempty"`
+	Error   string            `json:"error,omitempty"`
+}

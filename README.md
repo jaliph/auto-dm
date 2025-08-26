@@ -102,10 +102,85 @@ auto-dm/
 - **Get Recent Messages**: `GET /messages?limit=<limit>` - Get recent messages
 - **Get Statistics**: `GET /stats` - Get message statistics
 
+### Chat Participant Management
+- **Get Chat Participants**: `GET /chat-participants` - Get all chat participants with their auto-reply settings
+- **Create Chat Participant**: `POST /chat-participants` with JSON body:
+  ```json
+  {
+    "phone": "919876543210",
+    "name": "John Doe",
+    "auto_reply_enabled": true
+  }
+  ```
+  Returns:
+  ```json
+  {
+    "status": "success",
+    "message": "Chat participant created successfully",
+    "data": {
+      "id": 1,
+      "phone": "919876543210",
+      "name": "John Doe",
+      "auto_reply_enabled": true,
+      "created_at": "2024-01-01T12:00:00Z",
+      "updated_at": "2024-01-01T12:00:00Z"
+    }
+  }
+  ```
+
+- **Update Chat Participant**: `PUT /chat-participants/{phone}` with JSON body:
+  ```json
+  {
+    "name": "John Smith",
+    "auto_reply_enabled": false
+  }
+  ```
+
+- **Toggle Auto-Reply**: `POST /chat-participants/{phone}/auto-reply` with JSON body:
+  ```json
+  {
+    "auto_reply_enabled": false
+  }
+  ```
+  Returns:
+  ```json
+  {
+    "status": "success",
+    "message": "Auto-reply disabled for chat participant 919876543210",
+    "data": {
+      "id": 1,
+      "phone": "919876543210",
+      "name": "John Doe",
+      "auto_reply_enabled": false,
+      "created_at": "2024-01-01T12:00:00Z",
+      "updated_at": "2024-01-01T12:30:00Z"
+    }
+  }
+  ```
+
+- **Delete Chat Participant**: `DELETE /chat-participants/{phone}` - Delete a chat participant
+
 ### Database Structure
-- **Sender Stores**: `db/user_<phone>.db` - Individual sender WhatsApp sessions
-- **Sender Tracking**: `db/store.db` - Maps phone numbers to device IDs and tracks authentication status
+- **Sender Stores**: `db/user_<phone>.db` - Individual sender WhatsApp sessions (SQLite)
+- **Sender Tracking**: `db/store.db` - Maps phone numbers to device IDs and tracks authentication status (SQLite)
+- **Chat Participants**: MSSQL database with `chat_participants` table for auto-reply settings
 - **Message Storage**: MSSQL database with `whatsapp_messages` table
+
+#### Database Separation
+- **SQLite**: Used only for WhatsApp session storage and sender tracking
+- **MSSQL**: Used for message storage and chat participant management
+
+#### Chat Participants Table Schema (MSSQL)
+```sql
+CREATE TABLE chat_participants (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    phone NVARCHAR(20) UNIQUE NOT NULL,
+    name NVARCHAR(100),
+    auto_reply_enabled BIT NOT NULL DEFAULT 1,
+    created_at DATETIMEOFFSET DEFAULT GETDATE(),
+    updated_at DATETIMEOFFSET DEFAULT GETDATE()
+);
+```
 
 ### File Management
 - **File Sharing**: Files to be shared are stored in the configured `share_folder` (default: `./files`)
@@ -172,7 +247,7 @@ your-auto-dm-folder/
 ### Option 2: Build from Source
 
 1. Install Go 1.24.5 or later
-2. Install Microsoft SQL Server
+2. Install Microsoft SQL Server (required for message storage and chat participant management)
 3. Clone the repository
 4. Install dependencies:
    ```bash
@@ -314,6 +389,39 @@ your-auto-dm-folder/
    curl "http://localhost:8080/stats"
    ```
 
+7. **Manage Chat Participants**:
+   ```bash
+   # Get all chat participants
+   curl "http://localhost:8080/chat-participants"
+   
+   # Create a new chat participant
+   curl -X POST http://localhost:8080/chat-participants \
+     -H "Content-Type: application/json" \
+     -d '{
+       "phone": "919876543210",
+       "name": "John Doe",
+       "auto_reply_enabled": true
+     }'
+   
+   # Update a chat participant
+   curl -X PUT http://localhost:8080/chat-participants/919876543210 \
+     -H "Content-Type: application/json" \
+     -d '{
+       "name": "John Smith",
+       "auto_reply_enabled": false
+     }'
+   
+   # Toggle auto-reply for a participant
+   curl -X POST http://localhost:8080/chat-participants/919876543210/auto-reply \
+     -H "Content-Type: application/json" \
+     -d '{
+       "auto_reply_enabled": false
+     }'
+   
+   # Delete a chat participant
+   curl -X DELETE "http://localhost:8080/chat-participants/919876543210"
+   ```
+
 ## Authentication Flow
 
 1. **Register**: Call `/register` with a phone number
@@ -327,11 +435,19 @@ your-auto-dm-folder/
 ### Package Responsibilities
 
 - **`models`**: Defines data structures used across the application
-- **`database`**: Manages SQLite operations for sender mappings and GORM for message storage
+- **`database`**: Manages SQLite operations for sender mappings and GORM for MSSQL message/participant storage
 - **`store`**: Handles WhatsApp session storage for senders
 - **`whatsapp`**: Manages WhatsApp client operations and QR code sessions
 - **`api`**: Handles HTTP requests for the REST API
 - **`server`**: Manages the HTTP server lifecycle
+
+### Database Architecture
+
+The application uses a hybrid database approach:
+- **SQLite**: Lightweight, file-based storage for WhatsApp session data and sender tracking
+- **MSSQL**: Enterprise-grade database for message storage and chat participant management
+- **GORM**: ORM layer for MSSQL operations with automatic migrations
+- **Dual Database**: Separate concerns between session management (SQLite) and business data (MSSQL)
 
 ### Store Separation
 
@@ -438,10 +554,13 @@ Each release includes:
 
 #### **1. Environment Variables** (Recommended for production):
 ```bash
+# Required: MSSQL Database (for messages and chat participants)
 export MSSQL_SERVER="localhost"
 export MSSQL_DATABASE="whatsapp_automation"
 export MSSQL_USERNAME="sa"
 export MSSQL_PASSWORD="YourPassword123!"
+
+# API Configuration
 export API_PORT=":8080"
 export FILE_SHARE_FOLDER="./files"
 export RECEIVE_FOLDER="./received"
@@ -454,6 +573,7 @@ export OLLAMA_MODEL="llama2"
 #### **2. config.ini File** (Recommended for development):
 ```ini
 [database]
+# Required: MSSQL Database for message storage and chat participant management
 mssql_server = localhost
 mssql_database = whatsapp_automation
 mssql_username = sa
@@ -479,7 +599,8 @@ model = llama2
 - **API Server**: `:8080`
 - **QR Code Expiry**: 10 minutes
 - **Connection Check Interval**: 1 minute
-- **Database Files**: SQLite files in the `db/` directory
+- **Database Files**: SQLite files in the `db/` directory (WhatsApp sessions only)
+- **MSSQL Database**: Required for message storage and chat participant management
 - **File Sharing**: `./files` directory
 - **Build Output**: Binary files in the `build/` directory
 
@@ -544,10 +665,14 @@ ollama run llama2 "Hello, how are you?"
 ### How It Works
 
 1. **Message Reception**: When a text message is received by any authenticated sender
-2. **AI Processing**: The message is sent to the configured Ollama model
-3. **Response Generation**: Ollama generates an AI response
-4. **Response Cleaning**: Internal thinking patterns are automatically removed
-5. **Auto-Reply**: The cleaned response is automatically sent back to the original sender
+2. **Chat Participant Check**: The system checks if the sender is in the chat participants table
+   - If not found, automatically creates a new entry with auto-reply enabled by default
+   - If found, checks the `auto_reply_enabled` setting
+3. **Auto-Reply Decision**: Only proceeds if auto-reply is enabled for that participant
+4. **AI Processing**: The message is sent to the configured Ollama model
+5. **Response Generation**: Ollama generates an AI response
+6. **Response Cleaning**: Internal thinking patterns are automatically removed
+7. **Auto-Reply**: The cleaned response is automatically sent back to the original sender
 
 ### Features
 
@@ -555,6 +680,13 @@ ollama run llama2 "Hello, how are you?"
 - Only activates when both `OLLAMA_URL` and `OLLAMA_MODEL` are configured
 - Automatically disables if Ollama server is unavailable
 - Graceful fallback - doesn't affect other WhatsApp functionality
+
+#### **Automatic Chat Participant Management**
+- New chat participants are automatically created when they send their first message
+- Auto-reply is enabled by default for new participants
+- Use the chat participant APIs to manage auto-reply settings per participant
+- Disable auto-reply for specific participants without affecting others
+- Chat participant data is stored in MSSQL database for persistence and scalability
 
 #### **Response Cleaning**
 Automatically removes common AI thinking patterns:

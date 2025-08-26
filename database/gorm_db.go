@@ -41,7 +41,7 @@ func NewGormDB(server, database, username, password string) (*GormDB, error) {
 
 // migrate runs database migrations
 func (gdb *GormDB) migrate() error {
-	return gdb.db.AutoMigrate(&models.Message{}, &models.Sender{})
+	return gdb.db.AutoMigrate(&models.Message{}, &models.Sender{}, &models.ChatParticipant{})
 }
 
 // StoreMessage stores a WhatsApp message in the database
@@ -240,5 +240,91 @@ func (gdb *GormDB) UpdateMessageMediaPath(messageID, mediaPath string) error {
 		return fmt.Errorf("no message found with ID: %s", messageID)
 	}
 
+	return nil
+}
+
+// ChatParticipant methods for MSSQL
+
+// CreateChatParticipant creates a new chat participant in MSSQL
+func (gdb *GormDB) CreateChatParticipant(phone, name string, autoReplyEnabled bool) error {
+	participant := &models.ChatParticipant{
+		Phone:            phone,
+		Name:             name,
+		AutoReplyEnabled: autoReplyEnabled,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+
+	result := gdb.db.Create(participant)
+	if result.Error != nil {
+		return fmt.Errorf("failed to create chat participant: %v", result.Error)
+	}
+	return nil
+}
+
+// GetChatParticipant retrieves a chat participant by phone number from MSSQL
+func (gdb *GormDB) GetChatParticipant(phone string) (*models.ChatParticipant, error) {
+	var participant models.ChatParticipant
+	result := gdb.db.Where("phone = ?", phone).First(&participant)
+	if result.Error != nil {
+		return nil, fmt.Errorf("chat participant not found: %v", result.Error)
+	}
+	return &participant, nil
+}
+
+// UpdateChatParticipant updates a chat participant's information in MSSQL
+func (gdb *GormDB) UpdateChatParticipant(phone, name string, autoReplyEnabled bool) error {
+	result := gdb.db.Model(&models.ChatParticipant{}).
+		Where("phone = ?", phone).
+		Updates(map[string]interface{}{
+			"name":               name,
+			"auto_reply_enabled": autoReplyEnabled,
+			"updated_at":         time.Now(),
+		})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update chat participant: %v", result.Error)
+	}
+	return nil
+}
+
+// UpdateChatParticipantAutoReply updates only the auto-reply setting for a chat participant in MSSQL
+func (gdb *GormDB) UpdateChatParticipantAutoReply(phone string, autoReplyEnabled bool) error {
+	result := gdb.db.Model(&models.ChatParticipant{}).
+		Where("phone = ?", phone).
+		Updates(map[string]interface{}{
+			"auto_reply_enabled": autoReplyEnabled,
+			"updated_at":         time.Now(),
+		})
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to update chat participant auto-reply setting: %v", result.Error)
+	}
+	return nil
+}
+
+// GetAllChatParticipants retrieves all chat participants from MSSQL
+func (gdb *GormDB) GetAllChatParticipants() ([]*models.ChatParticipant, error) {
+	var participants []*models.ChatParticipant
+	result := gdb.db.Order("created_at DESC").Find(&participants)
+	if result.Error != nil {
+		return nil, fmt.Errorf("failed to get chat participants: %v", result.Error)
+	}
+	return participants, nil
+}
+
+// ChatParticipantExists checks if a chat participant exists in MSSQL
+func (gdb *GormDB) ChatParticipantExists(phone string) bool {
+	var participant models.ChatParticipant
+	result := gdb.db.Where("phone = ?", phone).First(&participant)
+	return result.Error == nil
+}
+
+// DeleteChatParticipant deletes a chat participant from MSSQL database
+func (gdb *GormDB) DeleteChatParticipant(phone string) error {
+	result := gdb.db.Where("phone = ?", phone).Delete(&models.ChatParticipant{})
+	if result.Error != nil {
+		return fmt.Errorf("failed to delete chat participant: %v", result.Error)
+	}
 	return nil
 }

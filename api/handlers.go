@@ -659,6 +659,392 @@ func (h *Handler) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(stats)
 }
 
+// HandleGetChatParticipants handles the /chat-participants GET API endpoint
+func (h *Handler) HandleGetChatParticipants(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	participants, err := h.gormDB.GetAllChatParticipants()
+	if err != nil {
+		response := models.ChatParticipantsResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Failed to get chat participants: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Convert to slice of ChatParticipant (not pointers)
+	var data []models.ChatParticipant
+	for _, p := range participants {
+		data = append(data, *p)
+	}
+
+	response := models.ChatParticipantsResponse{
+		Status:  "success",
+		Message: "Chat participants retrieved successfully",
+		Data:    data,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// HandleCreateChatParticipant handles the /chat-participants POST API endpoint
+func (h *Handler) HandleCreateChatParticipant(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var request models.ChatParticipantRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  "Invalid JSON format",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Validate required fields
+	if request.Phone == "" {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  "Phone number is required",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Check if participant already exists
+	if h.gormDB.ChatParticipantExists(request.Phone) {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Chat participant with phone %s already exists", request.Phone),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Set default auto-reply enabled to true if not specified
+	autoReplyEnabled := true
+	if request.AutoReplyEnabled != nil {
+		autoReplyEnabled = *request.AutoReplyEnabled
+	}
+
+	// Create chat participant
+	err := h.gormDB.CreateChatParticipant(request.Phone, request.Name, autoReplyEnabled)
+	if err != nil {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Failed to create chat participant: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Get the created participant
+	participant, err := h.gormDB.GetChatParticipant(request.Phone)
+	if err != nil {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Failed to retrieve created chat participant: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	response := models.ChatParticipantResponse{
+		Status:  "success",
+		Message: "Chat participant created successfully",
+		Data:    participant,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
+}
+
+// HandleUpdateChatParticipant handles the /chat-participants/{phone} PUT API endpoint
+func (h *Handler) HandleUpdateChatParticipant(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "PUT" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract phone number from URL path
+	path := r.URL.Path
+	if !strings.HasPrefix(path, "/chat-participants/") {
+		http.Error(w, "Invalid endpoint", http.StatusBadRequest)
+		return
+	}
+
+	phone := strings.TrimPrefix(path, "/chat-participants/")
+	if phone == "" {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  "Phone number is required",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Check if participant exists
+	if !h.gormDB.ChatParticipantExists(phone) {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Chat participant with phone %s not found", phone),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	var request models.ChatParticipantRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  "Invalid JSON format",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Get current participant to preserve existing values
+	currentParticipant, err := h.gormDB.GetChatParticipant(phone)
+	if err != nil {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Failed to get current chat participant: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Update fields if provided
+	name := currentParticipant.Name
+	if request.Name != "" {
+		name = request.Name
+	}
+
+	autoReplyEnabled := currentParticipant.AutoReplyEnabled
+	if request.AutoReplyEnabled != nil {
+		autoReplyEnabled = *request.AutoReplyEnabled
+	}
+
+	// Update chat participant
+	err = h.gormDB.UpdateChatParticipant(phone, name, autoReplyEnabled)
+	if err != nil {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Failed to update chat participant: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Get the updated participant
+	updatedParticipant, err := h.gormDB.GetChatParticipant(phone)
+	if err != nil {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Failed to retrieve updated chat participant: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	response := models.ChatParticipantResponse{
+		Status:  "success",
+		Message: "Chat participant updated successfully",
+		Data:    updatedParticipant,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// HandleToggleAutoReply handles the /chat-participants/{phone}/auto-reply POST API endpoint
+func (h *Handler) HandleToggleAutoReply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract phone number from URL path
+	path := r.URL.Path
+	if !strings.HasPrefix(path, "/chat-participants/") || !strings.HasSuffix(path, "/auto-reply") {
+		http.Error(w, "Invalid endpoint", http.StatusBadRequest)
+		return
+	}
+
+	phone := strings.TrimPrefix(path, "/chat-participants/")
+	phone = strings.TrimSuffix(phone, "/auto-reply")
+	if phone == "" {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  "Phone number is required",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Check if participant exists
+	if !h.gormDB.ChatParticipantExists(phone) {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Chat participant with phone %s not found", phone),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Parse request body for auto-reply setting
+	var request struct {
+		AutoReplyEnabled bool `json:"auto_reply_enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  "Invalid JSON format",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Update auto-reply setting
+	err := h.gormDB.UpdateChatParticipantAutoReply(phone, request.AutoReplyEnabled)
+	if err != nil {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Failed to update auto-reply setting: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Get the updated participant
+	updatedParticipant, err := h.gormDB.GetChatParticipant(phone)
+	if err != nil {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Failed to retrieve updated chat participant: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	status := "enabled"
+	if !request.AutoReplyEnabled {
+		status = "disabled"
+	}
+
+	response := models.ChatParticipantResponse{
+		Status:  "success",
+		Message: fmt.Sprintf("Auto-reply %s for chat participant %s", status, phone),
+		Data:    updatedParticipant,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// HandleDeleteChatParticipant handles the /chat-participants/{phone} DELETE API endpoint
+func (h *Handler) HandleDeleteChatParticipant(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "DELETE" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract phone number from URL path
+	path := r.URL.Path
+	if !strings.HasPrefix(path, "/chat-participants/") {
+		http.Error(w, "Invalid endpoint", http.StatusBadRequest)
+		return
+	}
+
+	phone := strings.TrimPrefix(path, "/chat-participants/")
+	if phone == "" {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  "Phone number is required",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Check if participant exists
+	if !h.gormDB.ChatParticipantExists(phone) {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Chat participant with phone %s not found", phone),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Delete chat participant
+	err := h.gormDB.DeleteChatParticipant(phone)
+	if err != nil {
+		response := models.ChatParticipantResponse{
+			Status: "error",
+			Error:  fmt.Sprintf("Failed to delete chat participant: %v", err),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	response := models.ChatParticipantResponse{
+		Status:  "success",
+		Message: fmt.Sprintf("Chat participant %s deleted successfully", phone),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 // sendHTMLResponse sends an HTML response with QR code display
 func (h *Handler) sendHTMLResponse(w http.ResponseWriter, title, message, qrCodePNG string, isError bool) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
