@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -177,7 +178,7 @@ func (gdb *GormDB) SyncSenderToMSSQL(sender *models.Sender) error {
 	result := gdb.db.Where("phone = ?", sender.Phone).First(&existingSender)
 
 	if result.Error != nil {
-		if result.Error.Error() == "record not found" {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			// Create new sender
 			return gdb.db.Create(sender).Error
 		}

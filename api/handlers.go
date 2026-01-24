@@ -137,12 +137,12 @@ func (h *Handler) HandleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleGetQRCode handles the /qr/{token} API endpoint
+// Client should poll this endpoint to get the latest QR code and check authentication status
 func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
-	log.Printf("DEBUG: HandleGetQRCode called with path: %s", r.URL.Path)
+	log.Printf("DEBUG: HandleGetQRCode - path: %s", r.URL.Path)
 
 	// Check if HTML response is requested
 	format := r.URL.Query().Get("format")
-	log.Printf("DEBUG: Format parameter: %s", format)
 
 	if r.Method != "GET" {
 		log.Printf("DEBUG: Invalid method: %s", r.Method)
@@ -168,14 +168,12 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := path[4:] // Remove /qr/ prefix
-	log.Printf("DEBUG: Extracted token: %s", token)
+	log.Printf("DEBUG: HandleGetQRCode - token: %s", token)
 
 	// Get QR code session with context
-	log.Printf("DEBUG: Calling qrManager.GetQRCodeWithContext with token: %s", token)
 	session, err := h.qrManager.GetQRCodeWithContext(r.Context(), token)
-	log.Printf("DEBUG: GetQRCodeWithContext returned err: %v", err)
 	if err != nil {
-		log.Printf("DEBUG: Error type: %T, Error message: %s", err, err.Error())
+		log.Printf("DEBUG: HandleGetQRCode - error: %v", err)
 
 		// Check if context was cancelled
 		if r.Context().Err() != nil {
@@ -188,52 +186,66 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Check if the error is due to expired session
-		if strings.Contains(err.Error(), "QR code session expired") {
-			log.Printf("DEBUG: Detected expired session error")
+		if strings.Contains(err.Error(), "expired") {
+			log.Printf("DEBUG: HandleGetQRCode - session expired, token: %s", token)
 			if format == "html" {
 				h.sendHTMLResponse(w, "QR Code Expired", "This QR code has expired. Please register again to get a new QR code.", "", true)
 				return
 			}
 			response := models.QRCodeResponse{
 				Status:  "error",
-				Error:   "QR code session expired",
+				Error:   "QR code session expired. Please register again.",
 				Expired: true,
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusGone)
 			json.NewEncoder(w).Encode(response)
-			log.Printf("DEBUG: Sent expired response")
+			return
+		}
+
+		// Check if QR not yet available (should retry)
+		if strings.Contains(err.Error(), "not yet available") {
+			log.Printf("DEBUG: HandleGetQRCode - QR not yet available, token: %s", token)
+			response := models.QRCodeResponse{
+				Status:  "pending",
+				Message: "QR code is being generated. Please retry in a moment.",
+				Expired: false,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			json.NewEncoder(w).Encode(response)
 			return
 		}
 
 		// Handle other errors (session not found, etc.)
-		log.Printf("DEBUG: Handling other error type")
+		log.Printf("DEBUG: HandleGetQRCode - other error: %v", err)
 		if format == "html" {
 			h.sendHTMLResponse(w, "QR Code Not Found", "The requested QR code was not found. Please check the URL or register again.", "", true)
 			return
 		}
 		response := models.QRCodeResponse{
 			Status:  "error",
-			Error:   fmt.Sprintf("QR code not found: %v", err),
+			Error:   fmt.Sprintf("QR code error: %v", err),
 			Expired: false,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(response)
-		log.Printf("DEBUG: Sent not found response")
 		return
 	}
 
 	// Check if authenticated
 	if session.Status == "authenticated" {
+		log.Printf("DEBUG: HandleGetQRCode - session authenticated for token: %s", token)
 		if format == "html" {
 			h.sendHTMLResponse(w, "Already Authenticated", "This phone number is already authenticated.", "", false)
 			return
 		}
 		response := models.QRCodeResponse{
-			Status:  "success",
-			Error:   "Phone number already authenticated",
-			Expired: false,
+			Status:        "success",
+			Message:       "Phone number authenticated successfully",
+			Authenticated: true,
+			Expired:       false,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -288,11 +300,14 @@ func (h *Handler) HandleGetQRCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return QR code with PNG image
+	log.Printf("DEBUG: HandleGetQRCode - returning QR code for token: %s, qrCodeLen: %d", token, len(session.QRCode))
 	response := models.QRCodeResponse{
-		Status:    "success",
-		QRCode:    session.QRCode, // Keep for backward compatibility
-		QRCodePNG: qrCodePNG,      // Base64 encoded PNG
-		Expired:   false,
+		Status:        "success",
+		Message:       "Scan this QR code with WhatsApp. Poll this endpoint to check for authentication.",
+		QRCode:        session.QRCode, // Keep for backward compatibility
+		QRCodePNG:     qrCodePNG,      // Base64 encoded PNG
+		Expired:       false,
+		Authenticated: false,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

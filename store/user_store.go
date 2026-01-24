@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
 	"go.mau.fi/whatsmeow"
@@ -16,6 +17,7 @@ import (
 type UserStoreManager struct {
 	userClients map[string]*whatsmeow.Client   // phone -> client
 	containers  map[string]*sqlstore.Container // phone -> container
+	mu          sync.RWMutex                   // protects maps from concurrent access
 }
 
 // NewUserStoreManager creates a new user store manager
@@ -53,9 +55,11 @@ func (usm *UserStoreManager) CreateUserStore(phone string) (*whatsmeow.Client, e
 	// Create user client (without connecting)
 	userClient := whatsmeow.NewClient(deviceStore, nil)
 
-	// Store references
+	// Store references (with lock)
+	usm.mu.Lock()
 	usm.userClients[phone] = userClient
 	usm.containers[phone] = container
+	usm.mu.Unlock()
 
 	log.Printf("Created user store for %s", phone)
 	return userClient, nil
@@ -100,19 +104,21 @@ func (usm *UserStoreManager) CreateFreshUserStore(phone string) (*whatsmeow.Clie
 func (usm *UserStoreManager) StoreAuthenticatedClient(phone string, client *whatsmeow.Client) {
 	log.Printf("DEBUG: StoreAuthenticatedClient called for phone: %s", phone)
 
-	// Store the authenticated client
+	// Store the authenticated client (with lock)
+	usm.mu.Lock()
 	usm.userClients[phone] = client
-
-	// Get the container for this client (it should already exist from QR generation)
-	// We don't need to store the container again as it's already managed
+	clientCount := len(usm.userClients)
+	usm.mu.Unlock()
 
 	log.Printf("Stored authenticated client for %s", phone)
-	log.Printf("DEBUG: StoreAuthenticatedClient - userClients map now has %d entries", len(usm.userClients))
+	log.Printf("DEBUG: StoreAuthenticatedClient - userClients map now has %d entries", clientCount)
 }
 
 // GetUserClient returns a user client by phone number
 func (usm *UserStoreManager) GetUserClient(phone string) (*whatsmeow.Client, bool) {
+	usm.mu.RLock()
 	client, exists := usm.userClients[phone]
+	usm.mu.RUnlock()
 	return client, exists
 }
 
@@ -160,9 +166,11 @@ func (usm *UserStoreManager) LoadUserStore(phone, deviceID string) (*whatsmeow.C
 		log.Printf("User %s connected successfully", phone)
 	}
 
-	// Store references
+	// Store references (with lock)
+	usm.mu.Lock()
 	usm.userClients[phone] = userClient
 	usm.containers[phone] = container
+	usm.mu.Unlock()
 
 	log.Printf("Loaded user store for %s", phone)
 	return userClient, nil
@@ -170,6 +178,9 @@ func (usm *UserStoreManager) LoadUserStore(phone, deviceID string) (*whatsmeow.C
 
 // DisconnectUser disconnects a user client
 func (usm *UserStoreManager) DisconnectUser(phone string) {
+	usm.mu.Lock()
+	defer usm.mu.Unlock()
+
 	if client, exists := usm.userClients[phone]; exists {
 		client.Disconnect()
 		delete(usm.userClients, phone)
@@ -180,62 +191,79 @@ func (usm *UserStoreManager) DisconnectUser(phone string) {
 // LogoutUser logs out a user client and deletes their device store
 func (usm *UserStoreManager) LogoutUser(phone string) error {
 	log.Printf("DEBUG: LogoutUser called for phone: %s", phone)
-	log.Printf("DEBUG: LogoutUser - userClients map has %d entries", len(usm.userClients))
-	for phoneKey := range usm.userClients {
-		log.Printf("DEBUG: LogoutUser - Found client for phone: %s", phoneKey)
+
+	usm.mu.Lock()
+	client, exists := usm.userClients[phone]
+	container := usm.containers[phone]
+	clientCount := len(usm.userClients)
+	usm.mu.Unlock()
+
+	log.Printf("DEBUG: LogoutUser - userClients map has %d entries", clientCount)
+
+	if !exists {
+		return fmt.Errorf("user %s not found", phone)
 	}
 
-	if client, exists := usm.userClients[phone]; exists {
-		// Logout from WhatsApp (this will unlink the device)
-		ctx := context.Background()
-		if err := client.Logout(ctx); err != nil {
-			log.Printf("Warning: Failed to logout user %s from WhatsApp: %v", phone, err)
-			// Continue with local cleanup even if logout fails
-		} else {
-			log.Printf("Successfully logged out user %s from WhatsApp", phone)
-		}
-
-		// Disconnect the client
-		client.Disconnect()
-		delete(usm.userClients, phone)
-		log.Printf("Disconnected user client: %s", phone)
-
-		// Delete the device store from database (only if JID is known)
-		if _, exists := usm.containers[phone]; exists {
-			if client.Store.ID != nil {
-				if err := client.Store.Delete(ctx); err != nil {
-					log.Printf("Warning: Failed to delete device store for user %s: %v", phone, err)
-				} else {
-					log.Printf("Successfully deleted device store for user %s", phone)
-				}
-			} else {
-				log.Printf("Skipping device store deletion for user %s (JID not known)", phone)
-			}
-			delete(usm.containers, phone)
-		}
-
-		// Delete the database file
-		dbPath := filepath.Join("db", fmt.Sprintf("user_%s.db", phone))
-		if err := os.Remove(dbPath); err != nil {
-			if !os.IsNotExist(err) {
-				log.Printf("Warning: Failed to delete database file for user %s: %v", phone, err)
-			}
-		} else {
-			log.Printf("Successfully deleted database file for user %s", phone)
-		}
-
-		return nil
+	// Logout from WhatsApp (this will unlink the device)
+	ctx := context.Background()
+	if err := client.Logout(ctx); err != nil {
+		log.Printf("Warning: Failed to logout user %s from WhatsApp: %v", phone, err)
+		// Continue with local cleanup even if logout fails
+	} else {
+		log.Printf("Successfully logged out user %s from WhatsApp", phone)
 	}
-	return fmt.Errorf("user %s not found", phone)
+
+	// Disconnect the client
+	client.Disconnect()
+
+	// Delete from maps (with lock)
+	usm.mu.Lock()
+	delete(usm.userClients, phone)
+	delete(usm.containers, phone)
+	usm.mu.Unlock()
+
+	log.Printf("Disconnected user client: %s", phone)
+
+	// Delete the device store from database (only if JID is known)
+	if container != nil && client.Store.ID != nil {
+		if err := client.Store.Delete(ctx); err != nil {
+			log.Printf("Warning: Failed to delete device store for user %s: %v", phone, err)
+		} else {
+			log.Printf("Successfully deleted device store for user %s", phone)
+		}
+	}
+
+	// Delete the database file
+	dbPath := filepath.Join("db", fmt.Sprintf("user_%s.db", phone))
+	if err := os.Remove(dbPath); err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("Warning: Failed to delete database file for user %s: %v", phone, err)
+		}
+	} else {
+		log.Printf("Successfully deleted database file for user %s", phone)
+	}
+
+	return nil
 }
 
-// GetAllUserClients returns all user clients
+// GetAllUserClients returns a copy of all user clients
 func (usm *UserStoreManager) GetAllUserClients() map[string]*whatsmeow.Client {
-	return usm.userClients
+	usm.mu.RLock()
+	defer usm.mu.RUnlock()
+
+	// Return a copy to avoid race conditions
+	clients := make(map[string]*whatsmeow.Client, len(usm.userClients))
+	for k, v := range usm.userClients {
+		clients[k] = v
+	}
+	return clients
 }
 
 // CloseAll closes all user stores
 func (usm *UserStoreManager) CloseAll() {
+	usm.mu.Lock()
+	defer usm.mu.Unlock()
+
 	for phone, client := range usm.userClients {
 		client.Disconnect()
 		log.Printf("Disconnected user client: %s", phone)

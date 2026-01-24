@@ -88,9 +88,9 @@ func (mh *MessageHandler) HandleMessageEvent(evt *events.Message, authenticatedS
 	log.Printf("Stored message from %s to %s: %s (IsFromMe: %v, Media: %s)",
 		message.SenderPhone, message.RecipientPhone, message.Content, evt.Info.IsFromMe, localFilePath)
 
-	// Handle auto-reply with Ollama for received text messages
+	// Handle auto-reply with Ollama for received text messages (async to not block)
 	if !evt.Info.IsFromMe && messageType == "text" && content != "" {
-		mh.handleAutoReply(senderPhone, recipientPhone, content)
+		go mh.handleAutoReply(senderPhone, recipientPhone, content)
 	}
 
 	return nil
@@ -389,17 +389,9 @@ func (mh *MessageHandler) handleAutoReply(senderPhone, recipientPhone, content s
 		}
 	}
 
-	// Check if Ollama is configured and working
+	// Check if Ollama is configured
 	if mh.ollamaClient == nil || !mh.ollamaClient.IsConfigured() {
 		log.Printf("DEBUG: Ollama not configured, skipping auto-reply")
-		return
-	}
-
-	// Test Ollama connection before processing
-	if err := mh.ollamaClient.TestConnection(); err != nil {
-		log.Printf("WARNING: Ollama connection failed, disabling auto-reply: %v", err)
-		// Disable Ollama client by setting it to nil
-		mh.ollamaClient = nil
 		return
 	}
 

@@ -47,11 +47,13 @@ type RegisterResponse struct {
 
 // QRCodeResponse represents a QR code response
 type QRCodeResponse struct {
-	Status    string `json:"status"`
-	QRCode    string `json:"qr_code,omitempty"`     // QR code string (for backward compatibility)
-	QRCodePNG string `json:"qr_code_png,omitempty"` // Base64 encoded PNG image
-	Error     string `json:"error,omitempty"`
-	Expired   bool   `json:"expired"`
+	Status        string `json:"status"`
+	QRCode        string `json:"qr_code,omitempty"`     // QR code string (for backward compatibility)
+	QRCodePNG     string `json:"qr_code_png,omitempty"` // Base64 encoded PNG image
+	Error         string `json:"error,omitempty"`
+	Expired       bool   `json:"expired"`
+	Authenticated bool   `json:"authenticated"`          // True if user scanned and authenticated
+	Message       string `json:"message,omitempty"`      // Human readable message
 }
 
 // ChatParticipant represents a chat participant with auto-reply settings

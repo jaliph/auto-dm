@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -63,9 +64,12 @@ func (oc *OllamaClient) GenerateResponse(prompt string) (string, error) {
 		return "", fmt.Errorf("failed to marshal request: %v", err)
 	}
 
-	// Create HTTP request
+	// Create HTTP request with context timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	url := fmt.Sprintf("%s/api/generate", oc.baseURL)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %v", err)
 	}
@@ -76,6 +80,9 @@ func (oc *OllamaClient) GenerateResponse(prompt string) (string, error) {
 	log.Printf("DEBUG: Sending request to Ollama: %s", url)
 	resp, err := oc.client.Do(req)
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("Ollama request timed out after 30s")
+		}
 		return "", fmt.Errorf("failed to send request to Ollama: %v", err)
 	}
 	defer resp.Body.Close()
@@ -106,16 +113,27 @@ func (oc *OllamaClient) IsConfigured() bool {
 	return oc.baseURL != "" && oc.model != ""
 }
 
-// TestConnection tests the connection to Ollama server
+// TestConnection tests the connection to Ollama server with a short timeout
 func (oc *OllamaClient) TestConnection() error {
 	if !oc.IsConfigured() {
 		return fmt.Errorf("Ollama not configured")
 	}
 
-	// Try to generate a simple response
-	_, err := oc.GenerateResponse("Hello")
+	// Create a short timeout client for testing (5 seconds)
+	testClient := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	// Just check if the server is reachable
+	url := fmt.Sprintf("%s/api/tags", oc.baseURL)
+	resp, err := testClient.Get(url)
 	if err != nil {
-		return fmt.Errorf("failed to test Ollama connection: %v", err)
+		return fmt.Errorf("Ollama server unreachable: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Ollama server returned status %d", resp.StatusCode)
 	}
 
 	return nil
